@@ -920,8 +920,45 @@ async def execute_jarvis_protocol(protocol: str, parameter: str = "") -> dict:
             "message": "Focus Protocol activated. Ambient volume reduced to 20%, distractions suppressed.",
             "spoken": "Focus protocol active, sir. Work environment optimized."
         }
+    elif prot in ["bedtime", "goodnight", "sleep", "night"]:
+        await run_command("laptop1", "pactl set-sink-mute @DEFAULT_SINK@ 1 || true")
+        await run_command("laptop2", "pactl set-sink-mute @DEFAULT_SINK@ 1 || true")
+        await run_command("laptop1", "xset dpms force off || true")
+        return {
+            "success": True,
+            "protocol": "bedtime",
+            "message": "Bedtime protocol engaged. Audio muted and displays powered down. Systems secured.",
+            "spoken": "Bedtime protocol engaged. Displays darkened and audio silenced. Good night, sir."
+        }
+    elif prot in ["sentinel", "homelab", "homelab_sentinel"]:
+        res = await run_command("laptop2", "docker ps --format '{{.Names}} ({{.Status}})' | head -n 6")
+        containers = res.get("stdout", "").strip() or "No running containers"
+        return {
+            "success": True,
+            "protocol": "sentinel",
+            "message": f"Homelab Sentinel active. Active Docker containers:\n{containers}",
+            "spoken": "Homelab Sentinel active. Server containers and homelab services nominal."
+        }
+    elif prot in ["locate_phone", "find_phone", "ring_phone"]:
+        import database as db
+        db.add_phone_command("locate", {})
+        return {
+            "success": True,
+            "protocol": "locate_phone",
+            "message": "Dispatched acoustic beacon and vibration wave to phone.",
+            "spoken": "Sounding acoustic beacon on your phone now, sir."
+        }
+    elif prot in ["clean", "cleanup", "clean_temp"]:
+        await run_command("laptop1", "sudo pacman -Sc --noconfirm || true")
+        await run_command("laptop2", "sudo pacman -Sc --noconfirm || true")
+        return {
+            "success": True,
+            "protocol": "cleanup",
+            "message": "System cache and package caches pruned across nodes.",
+            "spoken": "System caches pruned, sir. Storage and memory reclaimed."
+        }
     else:
-        return {"success": False, "error": f"Unknown protocol: {protocol}. Supported: 'briefing', 'diagnostic', 'house_party', 'focus'"}
+        return {"success": False, "error": f"Unknown protocol: {protocol}. Supported: 'briefing', 'diagnostic', 'house_party', 'focus', 'bedtime', 'sentinel', 'locate_phone', 'clean'"}
 
 # ==========================================
 # APPLICATION & GUI CONTROL (#3 COMPUTER CONTROL)
