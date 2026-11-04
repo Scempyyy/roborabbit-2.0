@@ -1103,12 +1103,32 @@ async def manage_integrations_tool(action: str, service: str = "", credentials: 
         if not srv or not credentials:
             return {"success": False, "error": "service and credentials dictionary required"}
         db.save_integration(srv, credentials, status="connected")
+        if srv == "gmail":
+            try:
+                import config
+                cfg = config.load_config()
+                if credentials.get("email"):
+                    cfg["gmail_user"] = credentials.get("email")
+                if credentials.get("app_password"):
+                    cfg["gmail_app_password"] = credentials.get("app_password")
+                config.save_config(cfg)
+            except Exception:
+                pass
         return {"success": True, "service": srv, "status": "connected", "message": f"{srv.capitalize()} connected successfully."}
 
     elif act in ["delete", "disconnect"]:
         if not srv:
             return {"success": False, "error": "service required"}
         db.delete_integration(srv)
+        if srv == "gmail":
+            try:
+                import config
+                cfg = config.load_config()
+                cfg.pop("gmail_user", None)
+                cfg.pop("gmail_app_password", None)
+                config.save_config(cfg)
+            except Exception:
+                pass
         return {"success": True, "service": srv, "status": "unlinked", "message": f"{srv.capitalize()} disconnected."}
 
     elif act == "test":

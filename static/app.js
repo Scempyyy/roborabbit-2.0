@@ -196,16 +196,16 @@ function setupEventListeners() {
   scopePhone.addEventListener("click", () => setScope("phone"));
 
   // Device actions
-  btnWakeLaptop1.addEventListener("click", wakeLaptop1);
-  badgeLaptop1.addEventListener("click", wakeLaptop1);
-  btnRefreshStatus.addEventListener("click", pollDeviceStatus);
+  if (btnWakeLaptop1) btnWakeLaptop1.addEventListener("click", wakeLaptop1);
+  if (badgeLaptop1) badgeLaptop1.addEventListener("click", wakeLaptop1);
+  if (btnRefreshStatus) btnRefreshStatus.addEventListener("click", pollDeviceStatus);
 
-  // Phone Modal
-  badgePhone.addEventListener("click", () => phoneModal.classList.remove("hidden"));
-  btnConnectPhoneModal.addEventListener("click", () => phoneModal.classList.remove("hidden"));
-  btnClosePhone.addEventListener("click", () => phoneModal.classList.add("hidden"));
-  btnCancelPhone.addEventListener("click", () => phoneModal.classList.add("hidden"));
-  btnSubmitPhone.addEventListener("click", connectPhone);
+  // Phone Modal / Phone Hub
+  if (badgePhone) badgePhone.addEventListener("click", () => { playHudClickSound(); openPhoneHubModal(); });
+  if (btnConnectPhoneModal) btnConnectPhoneModal.addEventListener("click", () => { playHudClickSound(); openPhoneHubModal(); });
+  if (btnClosePhone) btnClosePhone.addEventListener("click", () => phoneModal && phoneModal.classList.add("hidden"));
+  if (btnCancelPhone) btnCancelPhone.addEventListener("click", () => phoneModal && phoneModal.classList.add("hidden"));
+  if (btnSubmitPhone) btnSubmitPhone.addEventListener("click", connectPhone);
 
   // Quick Action Pills
   document.querySelectorAll(".quick-pill, .welcome-chip").forEach((btn) => {
@@ -1106,7 +1106,8 @@ async function pollDeviceStatus() {
 
 async function wakeLaptop1() {
   try {
-    btnWakeLaptop1.classList.add("animate-pulse");
+    if (btnWakeLaptop1) btnWakeLaptop1.classList.add("animate-pulse");
+    if (badgeLaptop1) badgeLaptop1.classList.add("animate-pulse");
     const res = await fetch("/api/wake", { method: "POST" });
     const data = await res.json();
     alert(data.message || "Wake-on-LAN magic packet sent to Laptop!");
@@ -1114,7 +1115,8 @@ async function wakeLaptop1() {
   } catch (e) {
     alert("Failed to send Wake packet: " + e.message);
   } finally {
-    btnWakeLaptop1.classList.remove("animate-pulse");
+    if (btnWakeLaptop1) btnWakeLaptop1.classList.remove("animate-pulse");
+    if (badgeLaptop1) badgeLaptop1.classList.remove("animate-pulse");
   }
 }
 
