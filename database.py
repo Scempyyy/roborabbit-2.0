@@ -135,54 +135,6 @@ def init_db():
             ]
             conn.executemany("INSERT INTO smart_devices (id, name, domain, state, brightness, color, temperature, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", devs)
 
-        cur.execute("SELECT COUNT(*) FROM todo_tasks")
-        if cur.fetchone()[0] == 0:
-            now = time.time()
-            todos = [
-                ("Deploy Roborabbit full 16-feature suite to production", "high", "Today", "completed", now),
-                ("Verify cross-device voice wake-word and low latency loop", "high", "Today", "pending", now),
-                ("Run automated security audit on homelab containers", "medium", "Tonight", "pending", now)
-            ]
-            conn.executemany("INSERT INTO todo_tasks (title, priority, deadline, status, created_at) VALUES (?, ?, ?, ?, ?)", todos)
-        cur.execute("SELECT COUNT(*) FROM calendar_events")
-        if cur.fetchone()[0] == 0:
-            today_str = time.strftime("%Y-%m-%d")
-            now = time.time()
-            events = [
-                ("Architecture Review & Multi-Device Sync", "14:00", "15:00", today_str, "work", "Review FreeLLMAPI hybrid bridge and 3-node latency.", now),
-                ("Deep Focus: Antigravity Autonomous Coding", "16:30", "18:00", today_str, "work", "Optimize Arch Linux power consumption and agent skills.", now),
-                ("Homelab Backup & Maintenance", "23:00", "23:30", today_str, "system", "Automated Rsync backup across Laptop and Server.", now)
-            ]
-            conn.executemany("INSERT INTO calendar_events (title, start_time, end_time, date, category, description, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)", events)
-
-        cur.execute("SELECT COUNT(*) FROM emails")
-        if cur.fetchone()[0] == 0:
-            now = time.time()
-            emails = [
-                ("Alex Vance", "alex.vance@techcorp.io", "admin@roborabbit.local", "Project Nexus Sprint Update & Deployment Checklist", "Sir, all microservices are synced across clusters. Looking forward to today's architecture review. The FreeLLMAPI container is running at peak throughput.", "inbox", 0, 1, "10:15 AM", now),
-                ("GitHub Notifications", "notifications@github.com", "admin@roborabbit.local", "[antigravity-dev] Autonomous Agent pair-programming PR merged", "Your PR #42 'Enhanced voice loop and wake-word detection' has been merged into main by the automated review pipeline.", "inbox", 0, 0, "09:30 AM", now),
-                ("Arch Linux Server Monitor", "root@archlinux.local", "admin@roborabbit.local", "System Health Nominal: All 3 Nodes Online", "Daily automated health check: Laptop, Server, and Mobile interfaces are responding with zero packet loss.", "inbox", 1, 0, "08:00 AM", now)
-            ]
-            conn.executemany("INSERT INTO emails (sender, sender_email, recipient, subject, body, folder, is_read, is_starred, received_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", emails)
-
-        cur.execute("SELECT COUNT(*) FROM phone_notifications")
-        if cur.fetchone()[0] == 0:
-            now = time.time()
-            notifs = [
-                ("WhatsApp", "com.whatsapp", "Alex Vance", "Let me know when the Roborabbit server is up!", "11:20 AM", 0, now),
-                ("Google Calendar", "com.google.android.calendar", "Upcoming: Architecture Review", "Starting in 2 hours on Google Meet", "11:00 AM", 0, now),
-                ("Battery Monitor", "com.android.systemui", "Phone Charged", "Battery at 94% - Disconnect charger", "10:45 AM", 1, now)
-            ]
-            conn.executemany("INSERT INTO phone_notifications (app_name, package_name, title, content, timestamp, is_read, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)", notifs)
-            
-        cur.execute("SELECT COUNT(*) FROM alarms")
-        if cur.fetchone()[0] == 0:
-            now = time.time()
-            alarms = [
-                ("Daily Briefing Alarm", "08:00", now + 3600 * 20, 0, "laptop2", "active", now)
-            ]
-            conn.executemany("INSERT INTO alarms (label, time_str, trigger_timestamp, duration_seconds, device, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)", alarms)
-            
         conn.commit()
 
 def list_sessions():
