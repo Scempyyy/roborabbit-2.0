@@ -60,6 +60,16 @@ public class MainActivity extends Activity {
             }
         }
 
+        // Check if Notification Listener access is granted for live alerts
+        if (!isNotificationListenerEnabled()) {
+            try {
+                Intent notifIntent = new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS");
+                notifIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(notifIntent);
+            } catch (Exception ignored) {}
+        }
+
+
         webView = findViewById(R.id.webView);
         loadingLayout = findViewById(R.id.loadingLayout);
         loadingStatusText = findViewById(R.id.loadingStatusText);
@@ -165,5 +175,21 @@ public class MainActivity extends Activity {
         } catch (Throwable e) {
             e.printStackTrace();
         }
+    }
+
+    private boolean isNotificationListenerEnabled() {
+        String pkgName = getPackageName();
+        try {
+            String flat = android.provider.Settings.Secure.getString(getContentResolver(), "enabled_notification_listeners");
+            if (flat != null && !flat.isEmpty()) {
+                String[] names = flat.split(":");
+                for (String name : names) {
+                    if (name.contains(pkgName)) {
+                        return true;
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        return false;
     }
 }

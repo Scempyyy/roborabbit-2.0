@@ -158,25 +158,86 @@ public class RoborabbitService extends Service {
 
     private void executeCommand(JSONObject cmd) {
         try {
-            String action = cmd.optString("action", "");
-            if ("open_url".equalsIgnoreCase(action) || "open_app".equalsIgnoreCase(action)) {
-                String targetUrl = cmd.optString("url", "https://www.youtube.com");
+            String action = cmd.optString("action", "").toLowerCase();
+            if ("open_url".equals(action)) {
+                String targetUrl = cmd.optString("url", "https://google.com");
                 Intent viewIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl));
                 viewIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 startActivity(viewIntent);
-            } else if ("speak".equalsIgnoreCase(action)) {
+            } else if ("open_app".equals(action) || "launch_app".equals(action)) {
+                String appName = cmd.optString("app", "").toLowerCase();
+                String targetPkg = cmd.optString("package", "");
+                if (targetPkg.isEmpty()) {
+                    if (appName.contains("whatsapp")) targetPkg = "com.whatsapp";
+                    else if (appName.contains("insta")) targetPkg = "com.instagram.android";
+                    else if (appName.contains("youtube")) targetPkg = "com.google.android.youtube";
+                    else if (appName.contains("spotify")) targetPkg = "com.spotify.music";
+                    else if (appName.contains("gmail") || appName.contains("mail")) targetPkg = "com.google.android.gm";
+                    else if (appName.contains("telegram")) targetPkg = "org.telegram.messenger";
+                    else if (appName.contains("map")) targetPkg = "com.google.android.apps.maps";
+                    else if (appName.contains("camera")) {
+                        Intent cam = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+                        cam.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(cam);
+                        return;
+                    }
+                }
+                if (!targetPkg.isEmpty()) {
+                    Intent launchIntent = getPackageManager().getLaunchIntentForPackage(targetPkg);
+                    if (launchIntent != null) {
+                        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(launchIntent);
+                        return;
+                    }
+                }
+                String fallbackUrl = cmd.optString("url", "https://google.com");
+                Intent viewIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(fallbackUrl));
+                viewIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(viewIntent);
+            } else if ("speak".equals(action)) {
                 String text = cmd.optString("text", "All systems operational.");
                 if (tts != null) {
                     tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "robo_tts");
                 }
-            } else if ("vibrate".equalsIgnoreCase(action)) {
+            } else if ("vibrate".equals(action)) {
                 Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
                 if (v != null) {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        v.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE));
+                        v.vibrate(VibrationEffect.createOneShot(800, VibrationEffect.DEFAULT_AMPLITUDE));
                     } else {
-                        v.vibrate(500);
+                        v.vibrate(800);
                     }
+                }
+            } else if ("locate".equals(action) || "ring".equals(action)) {
+                Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+                if (v != null) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        v.vibrate(VibrationEffect.createWaveform(new long[]{0, 400, 200, 400, 200, 800}, -1));
+                    } else {
+                        v.vibrate(1500);
+                    }
+                }
+                if (tts != null) {
+                    tts.speak("RoboRabbit device location beacon active. Phone online, sir.", TextToSpeech.QUEUE_FLUSH, null, "robo_beacon");
+                }
+            } else if ("dial".equals(action) || "call".equals(action)) {
+                String phone = cmd.optString("phone", cmd.optString("number", ""));
+                Intent dialIntent = new Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + phone));
+                dialIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(dialIntent);
+            } else if ("sms".equals(action)) {
+                String phone = cmd.optString("phone", cmd.optString("number", ""));
+                String body = cmd.optString("message", cmd.optString("body", ""));
+                Intent smsIntent = new Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + phone));
+                smsIntent.putExtra("sms_body", body);
+                smsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(smsIntent);
+            } else if ("clipboard".equals(action) || "copy".equals(action)) {
+                String text = cmd.optString("text", "");
+                android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                if (cm != null) {
+                    android.content.ClipData clip = android.content.ClipData.newPlainText("Roborabbit Clip", text);
+                    cm.setPrimaryClip(clip);
                 }
             }
         } catch (Exception e) {
