@@ -816,7 +816,11 @@ function updateWakeWordUI() {
   }
 }
 
-function toggleWakeWord() {
+async function toggleWakeWord() {
+  if (!isWakeWordEnabled) {
+    const granted = await ensureMicrophonePermission(true);
+    if (!granted) return;
+  }
   isWakeWordEnabled = !isWakeWordEnabled;
   localStorage.setItem("roborabbit_wakeword", isWakeWordEnabled);
   updateWakeWordUI();
@@ -895,21 +899,45 @@ let callDurationSeconds = 0;
 let callTimerInterval = null;
 let currentCallSpeaker = "laptop"; // "laptop", "server", "phone"
 
-async function enhanceMicrophoneInput() {
-  try {
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia && !window.__micAudioStream) {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: { ideal: true },
-          noiseSuppression: { ideal: true },
-          autoGainControl: { ideal: true }
-        }
-      });
-      window.__micAudioStream = stream;
-    }
-  } catch (e) {
-    console.warn("Enhanced microphone warning:", e);
+let micPermissionGranted = false;
+
+async function ensureMicrophonePermission(forcePrompt = false) {
+  if (micPermissionGranted && !forcePrompt) return true;
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    console.warn("MediaDevices API not available in current window context");
+    return true;
   }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: { ideal: true },
+        noiseSuppression: { ideal: true },
+        autoGainControl: { ideal: true }
+      }
+    });
+
+    // Release stream tracks immediately so Android HAL / AudioRecord does not lock mic hardware
+    stream.getTracks().forEach(track => {
+      try { track.stop(); } catch (e) {}
+    });
+
+    micPermissionGranted = true;
+    console.log("Microphone access verified and hardware released for recognition engine.");
+    return true;
+  } catch (err) {
+    console.warn("Microphone access prompt error:", err);
+    micPermissionGranted = false;
+    if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+      alert("Microphone permission was denied. Please allow microphone access in your browser or phone app settings so RoboRabbit can hear you.");
+    }
+    return false;
+  }
+}
+
+async function enhanceMicrophoneInput() {
+  return await ensureMicrophonePermission(false);
 }
 
 async function startCallMode() {
@@ -920,7 +948,12 @@ async function startCallMode() {
   const modal = document.getElementById("modal-call-mode");
   if (modal) modal.classList.remove("hidden");
 
-  await enhanceMicrophoneInput();
+  // Prompt and verify mic permission immediately
+  const hasPerm = await ensureMicrophonePermission(true);
+  if (!hasPerm) {
+    updateCallStatus("Microphone access denied. Please grant mic permission.", "listening");
+  }
+
   getAudioContext();
 
   const timerDisplay = document.getElementById("call-timer-display");
@@ -1140,9 +1173,15 @@ function initSpeechRecognition() {
     return;
   }
 
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
   speechRecognizer = new SpeechRec();
-  speechRecognizer.continuous = true;
+  // CRITICAL MOBILE STABILITY FIX:
+  // On mobile Android, setting continuous = true causes Chromium to buffer silently or drop frames.
+  // Setting continuous = false on mobile delivers crystal-clear discrete utterances with reliable onresult and onend.
+  speechRecognizer.continuous = !isMobile;
   speechRecognizer.interimResults = true;
+  speechRecognizer.maxAlternatives = 1;
 
   // Multi-accent adaptation: Auto-detect regional English (Indian, British, US)
   const navLang = (navigator.language || "").toLowerCase();
@@ -1218,7 +1257,7 @@ function initSpeechRecognition() {
       silenceTimer = setTimeout(async () => {
         if (!currentSpeech || isStreaming) return;
         await sendCallModeMessage(currentSpeech);
-      }, finalChunk.length > 0 ? 750 : 1300);
+      }, finalChunk.length > 0 ? (isMobile ? 550 : 750) : 1300);
       return;
     }
 
@@ -1239,7 +1278,6 @@ function initSpeechRecognition() {
 
       if (wakeMatch) {
         playWakeChime();
-        enhanceMicrophoneInput();
         const initialQuery = wakeMatch[1] ? wakeMatch[1].trim() : "";
         enterConversationMode("Robo is listening, sir...");
         if (initialQuery) {
@@ -1253,7 +1291,7 @@ function initSpeechRecognition() {
             exitConversationMode(false);
             sendMessage();
           }
-        }, 1200);
+        }, isMobile ? 800 : 1200);
       }
     } else {
       // Active conversational mode ("talk like humans")
@@ -1272,7 +1310,7 @@ function initSpeechRecognition() {
           exitConversationMode(false);
           sendMessage();
         }
-      }, 1200);
+      }, isMobile ? 800 : 1200);
     }
   };
 
@@ -1282,8 +1320,20 @@ function initSpeechRecognition() {
       isWakeWordEnabled = false;
       updateWakeWordUI();
       hideListeningPill();
+      micPermissionGranted = false;
       if (isCallModeActive) {
-        updateCallStatus("Microphone access denied. Please grant mic permission.", "listening");
+        updateCallStatus("Microphone access denied. Please grant mic permission in browser/site settings.", "listening");
+      }
+    } else if (event.error === "no-speech") {
+      // Quiet pause, restart seamlessly
+      clearTimeout(recognizerRestartTimeout);
+      if (isCallModeActive || isConversationMode || isWakeWordEnabled) {
+        recognizerRestartTimeout = setTimeout(startSpeechRecognitionIfNeeded, isMobile ? 120 : 80);
+      }
+    } else if (event.error === "network") {
+      clearTimeout(recognizerRestartTimeout);
+      if (isCallModeActive || isConversationMode || isWakeWordEnabled) {
+        recognizerRestartTimeout = setTimeout(startSpeechRecognitionIfNeeded, 400);
       }
     } else if (isCallModeActive) {
       clearTimeout(recognizerRestartTimeout);
@@ -1300,12 +1350,12 @@ function initSpeechRecognition() {
   speechRecognizer.onend = () => {
     isRecognizing = false;
     clearTimeout(recognizerRestartTimeout);
-    if (isCallModeActive) {
-      recognizerRestartTimeout = setTimeout(startSpeechRecognitionIfNeeded, 50);
+    if (isCallModeActive && !isCallMuted) {
+      recognizerRestartTimeout = setTimeout(startSpeechRecognitionIfNeeded, isMobile ? 100 : 50);
     } else if (isConversationMode) {
-      recognizerRestartTimeout = setTimeout(startSpeechRecognitionIfNeeded, 80);
+      recognizerRestartTimeout = setTimeout(startSpeechRecognitionIfNeeded, isMobile ? 120 : 80);
     } else if (isWakeWordEnabled) {
-      recognizerRestartTimeout = setTimeout(startSpeechRecognitionIfNeeded, 800);
+      recognizerRestartTimeout = setTimeout(startSpeechRecognitionIfNeeded, isMobile ? 800 : 600);
     }
   };
 
@@ -1325,12 +1375,9 @@ function startSpeechRecognitionIfNeeded() {
   }
 }
 
-function toggleSpeechRecognition() {
-  if (!speechRecognizer) {
-    alert("Speech recognition is not supported in this browser. Please use Chrome, Edge, or a modern Android browser.");
-    return;
-  }
+async function toggleSpeechRecognition() {
   getAudioContext();
+
   if (isConversationMode) {
     if (chatInput.value.trim().length > 0 && !isStreaming) {
       exitConversationMode(false);
@@ -1338,20 +1385,36 @@ function toggleSpeechRecognition() {
     } else {
       exitConversationMode(true);
     }
-  } else {
-    stopSpeaking();
-    playWakeChime();
-    chatInput.value = "";
-    enterConversationMode("Listening... Speak your command");
-    startSpeechRecognitionIfNeeded();
+    return;
   }
+
+  // Explicitly prompt and ensure mic permission
+  const granted = await ensureMicrophonePermission(true);
+  if (!granted) return;
+
+  if (!speechRecognizer) {
+    initSpeechRecognition();
+  }
+
+  if (!speechRecognizer) {
+    alert("Speech recognition is not supported in this browser. Please use Chrome, Edge, or a modern Android browser.");
+    return;
+  }
+
+  stopSpeaking();
+  playWakeChime();
+  chatInput.value = "";
+  enterConversationMode("Listening... Speak your command");
+  startSpeechRecognitionIfNeeded();
 }
 
 // User Interaction Unlocker for Browser Autoplay & AudioContext
 function unlockAudioContextOnGesture() {
   getAudioContext();
   if (isWakeWordEnabled) {
-    startSpeechRecognitionIfNeeded();
+    ensureMicrophonePermission(false).then(() => {
+      startSpeechRecognitionIfNeeded();
+    });
   }
 }
 window.addEventListener("click", unlockAudioContextOnGesture, { passive: true });

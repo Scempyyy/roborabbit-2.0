@@ -113,7 +113,15 @@ public class MainActivity extends Activity {
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
-                        request.grant(request.getResources());
+                        try {
+                            request.grant(request.getResources());
+                        } catch (Exception e) {
+                            try {
+                                request.grant(new String[]{
+                                        PermissionRequest.RESOURCE_AUDIO_CAPTURE
+                                });
+                            } catch (Exception ignored) {}
+                        }
                     }
                 });
             }
