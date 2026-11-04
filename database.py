@@ -120,6 +120,14 @@ def init_db():
                 created_at REAL
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS integrations (
+                service TEXT PRIMARY KEY,
+                credentials TEXT,
+                status TEXT DEFAULT 'configured',
+                updated_at REAL
+            )
+        """)
         conn.commit()
         
         # Seed starter data if empty
@@ -607,3 +615,58 @@ def delete_todo(todo_id: int) -> bool:
         conn.execute("DELETE FROM todo_tasks WHERE id = ?", (todo_id,))
         conn.commit()
         return True
+
+# ==========================================
+# CONNECTED APPS & INTEGRATIONS REPOSITORY
+# ==========================================
+
+def save_integration(service: str, credentials_dict: dict, status: str = "connected") -> bool:
+    init_db()
+    now = time.time()
+    creds_json = json.dumps(credentials_dict)
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO integrations (service, credentials, status, updated_at) VALUES (?, ?, ?, ?)",
+            (service.lower().strip(), creds_json, status, now)
+        )
+        conn.commit()
+        return True
+
+def get_integration(service: str) -> dict:
+    init_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM integrations WHERE service = ?", (service.lower().strip(),))
+        row = cur.fetchone()
+        if row:
+            d = dict(row)
+            try:
+                d["credentials"] = json.loads(d["credentials"])
+            except Exception:
+                d["credentials"] = {}
+            return d
+        return None
+
+def list_integrations() -> dict:
+    init_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT service, status, updated_at FROM integrations")
+        rows = cur.fetchall()
+        result = {}
+        for r in rows:
+            result[r["service"]] = {
+                "status": r["status"],
+                "updated_at": r["updated_at"]
+            }
+        return result
+
+def delete_integration(service: str) -> bool:
+    init_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM integrations WHERE service = ?", (service.lower().strip(),))
+        conn.commit()
+        return True
+

@@ -28,7 +28,13 @@ from tools import (
     manage_smart_home_tool,
     manage_todos_tool,
     developer_tools,
-    emergency_stop_tool
+    emergency_stop_tool,
+    manage_integrations_tool,
+    notion_tool,
+    github_tool,
+    media_player_tool,
+    clipboard_tool,
+    control_device_deep_tool
 )
 
 TOOL_DEFINITIONS_OPENAI = [
@@ -487,6 +493,104 @@ TOOL_DEFINITIONS_OPENAI = [
                 "properties": {}
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "manage_integrations",
+            "description": "Manage connected accounts and integrations (Gmail, Notion, GitHub, LinkedIn, Instagram, Spotify, Telegram).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["list", "get", "save", "delete", "test"], "description": "Action"},
+                    "service": {"type": "string", "description": "Service name (gmail, notion, github, linkedin, instagram, spotify, telegram)"},
+                    "credentials": {"type": "object", "description": "Credentials map"}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "notion_tool",
+            "description": "Search, read, or create pages and notes in Notion.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["search", "list_pages", "create_page", "add_note"]},
+                    "title": {"type": "string", "description": "Page or note title"},
+                    "content": {"type": "string", "description": "Page content"},
+                    "database_id": {"type": "string", "description": "Optional target Notion database ID"}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "github_tool",
+            "description": "Inspect GitHub repositories, pull requests, issues, or create an issue.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["list_repos", "create_issue", "status"]},
+                    "repo": {"type": "string", "description": "Target repository, e.g. 'owner/repo'"},
+                    "title": {"type": "string", "description": "Issue title"},
+                    "body": {"type": "string", "description": "Issue description"}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "media_player",
+            "description": "Control system media playback (Spotify, YouTube, browser audio) using playerctl.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "device": {"type": "string", "enum": ["laptop1", "laptop2", "phone"], "description": "Target device"},
+                    "action": {"type": "string", "enum": ["play_pause", "play", "pause", "next", "previous", "status", "volume"]},
+                    "parameter": {"type": "string", "description": "Optional parameter such as volume percentage"}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "clipboard",
+            "description": "Read, write, or sync system clipboard across Laptop, Server, and Mobile.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "device": {"type": "string", "enum": ["laptop1", "laptop2", "phone"]},
+                    "action": {"type": "string", "enum": ["read", "write", "sync"]},
+                    "text": {"type": "string", "description": "Text to copy"}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "control_device_deep",
+            "description": "Execute deep OS-level or Mobile phone controls: mouse clicks, cursor moves, typing text, keypresses, brightness, volume, locating phone beacon, phone dialing, SMS.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target": {"type": "string", "enum": ["laptop1", "laptop2", "phone"], "description": "Target device"},
+                    "action": {"type": "string", "enum": ["mouse_click", "mouse_move", "type", "key", "brightness", "volume", "mute", "unmute", "lock", "locate", "vibrate", "dial", "sms", "open_app", "open_url"], "description": "Action"},
+                    "parameter": {"type": "string", "description": "Action argument (e.g. coordinates '100 200', text to type, phone number, app name, volume level)"}
+                },
+                "required": ["target", "action"]
+            }
+        }
     }
 ]
 
@@ -853,6 +957,104 @@ async def execute_tool(name: str, args: dict) -> tuple[dict, dict]:
             "stderr": "",
             "exit_code": 0,
             "duration_ms": 50
+        }
+        return event_data, res
+    elif name == "manage_integrations":
+        act = args.get("action", "list")
+        srv = args.get("service", "")
+        creds = args.get("credentials")
+        res = await manage_integrations_tool(act, srv, creds)
+        event_data = {
+            "success": res.get("success", False),
+            "host": "cloud",
+            "host_display": f"🔌 Integrations Hub ({srv or act})",
+            "command": f"manage_integrations({act}, {srv})",
+            "stdout": json.dumps(res, indent=2),
+            "stderr": res.get("error", ""),
+            "exit_code": 0 if res.get("success") else 1,
+            "duration_ms": 80
+        }
+        return event_data, res
+    elif name == "notion_tool":
+        act = args.get("action", "search")
+        t = args.get("title", "")
+        c = args.get("content", "")
+        db_id = args.get("database_id", "")
+        res = await notion_tool(act, t, c, db_id)
+        event_data = {
+            "success": res.get("success", False),
+            "host": "cloud",
+            "host_display": f"📝 Notion Workspace ({act})",
+            "command": f"notion({act}, '{t}')",
+            "stdout": json.dumps(res, indent=2),
+            "stderr": res.get("error", ""),
+            "exit_code": 0 if res.get("success") else 1,
+            "duration_ms": 150
+        }
+        return event_data, res
+    elif name == "github_tool":
+        act = args.get("action", "list_repos")
+        repo = args.get("repo", "")
+        t = args.get("title", "")
+        b = args.get("body", "")
+        res = await github_tool(act, repo, t, b)
+        event_data = {
+            "success": res.get("success", False),
+            "host": "cloud",
+            "host_display": f"🐙 GitHub Command ({act})",
+            "command": f"github({act}, {repo})",
+            "stdout": json.dumps(res, indent=2),
+            "stderr": res.get("error", ""),
+            "exit_code": 0 if res.get("success") else 1,
+            "duration_ms": 120
+        }
+        return event_data, res
+    elif name == "media_player":
+        dev = args.get("device", "laptop1")
+        act = args.get("action", "play_pause")
+        param = args.get("parameter", "")
+        res = await media_player_tool(dev, act, param)
+        event_data = {
+            "success": res.get("success", False),
+            "host": dev,
+            "host_display": f"🎵 Media Player ({dev})",
+            "command": f"playerctl({act})",
+            "stdout": json.dumps(res, indent=2),
+            "stderr": res.get("error", ""),
+            "exit_code": 0 if res.get("success") else 1,
+            "duration_ms": 40
+        }
+        return event_data, res
+    elif name == "clipboard":
+        dev = args.get("device", "laptop1")
+        act = args.get("action", "read")
+        txt = args.get("text", "")
+        res = await clipboard_tool(dev, act, txt)
+        event_data = {
+            "success": res.get("success", False),
+            "host": dev,
+            "host_display": f"📋 Cross-Clipboard ({dev})",
+            "command": f"clipboard({act})",
+            "stdout": json.dumps(res, indent=2),
+            "stderr": res.get("error", ""),
+            "exit_code": 0 if res.get("success") else 1,
+            "duration_ms": 30
+        }
+        return event_data, res
+    elif name == "control_device_deep":
+        tgt = args.get("target", "laptop1")
+        act = args.get("action", "mouse_click")
+        param = args.get("parameter", "")
+        res = await control_device_deep_tool(tgt, act, param)
+        event_data = {
+            "success": res.get("success", False),
+            "host": tgt,
+            "host_display": f"🕹️ Deep Hardware Control ({tgt})",
+            "command": f"deep_control({tgt}, {act}, '{param}')",
+            "stdout": json.dumps(res, indent=2),
+            "stderr": res.get("error", ""),
+            "exit_code": 0 if res.get("success") else 1,
+            "duration_ms": 70
         }
         return event_data, res
     else:

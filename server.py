@@ -29,7 +29,13 @@ from tools import (
     emergency_stop_tool,
     developer_tools,
     manage_application_tool,
-    sync_gmail_tool
+    sync_gmail_tool,
+    manage_integrations_tool,
+    notion_tool,
+    github_tool,
+    media_player_tool,
+    clipboard_tool,
+    control_device_deep_tool
 )
 from agent import chat_stream
 from tts import synthesize_speech, clean_text_for_speech, AVAILABLE_VOICES, broadcast_speaker
@@ -606,6 +612,101 @@ async def api_emergency_stop():
 @app.post("/api/screen/capture")
 async def api_screen_capture(device: str = "laptop1", ocr: bool = True):
     return await capture_screen_vision_tool(device=device, run_ocr=ocr)
+
+# ==========================================
+# CONNECTED APPS & INTEGRATIONS API
+# ==========================================
+
+@app.get("/api/integrations")
+async def api_get_integrations():
+    return await manage_integrations_tool(action="list")
+
+@app.get("/api/integrations/{service}")
+async def api_get_integration_detail(service: str):
+    return await manage_integrations_tool(action="get", service=service)
+
+class IntegrationSaveRequest(BaseModel):
+    credentials: dict
+
+@app.post("/api/integrations/{service}")
+async def api_save_integration(service: str, req: IntegrationSaveRequest):
+    return await manage_integrations_tool(action="save", service=service, credentials=req.credentials)
+
+@app.post("/api/integrations/{service}/test")
+async def api_test_integration(service: str):
+    return await manage_integrations_tool(action="test", service=service)
+
+@app.delete("/api/integrations/{service}")
+async def api_delete_integration(service: str):
+    return await manage_integrations_tool(action="delete", service=service)
+
+# ==========================================
+# NOTION & GITHUB WORKSPACE API
+# ==========================================
+
+class NotionRequest(BaseModel):
+    action: str = "search"
+    title: str = ""
+    content: str = ""
+    database_id: str = ""
+
+@app.post("/api/notion")
+async def api_notion_action(req: NotionRequest):
+    return await notion_tool(action=req.action, title=req.title, content=req.content, database_id=req.database_id)
+
+class GitHubRequest(BaseModel):
+    action: str = "list_repos"
+    repo: str = ""
+    title: str = ""
+    body: str = ""
+
+@app.post("/api/github")
+async def api_github_action(req: GitHubRequest):
+    return await github_tool(action=req.action, repo=req.repo, title=req.title, body=req.body)
+
+# ==========================================
+# MEDIA PLAYERCTL & AUDIO CONTROL
+# ==========================================
+
+class MediaControlRequest(BaseModel):
+    device: str = "laptop1"
+    action: str = "play_pause"
+    parameter: str = ""
+
+@app.post("/api/media/control")
+async def api_media_control(req: MediaControlRequest):
+    return await media_player_tool(device=req.device, action=req.action, parameter=req.parameter)
+
+@app.get("/api/media/status")
+async def api_media_status(device: str = "laptop1"):
+    return await media_player_tool(device=device, action="status")
+
+# ==========================================
+# CROSS-DEVICE CLIPBOARD
+# ==========================================
+
+class ClipboardRequest(BaseModel):
+    device: str = "laptop1"
+    action: str = "read"
+    text: str = ""
+
+@app.post("/api/clipboard")
+async def api_clipboard_action(req: ClipboardRequest):
+    return await clipboard_tool(device=req.device, action=req.action, text=req.text)
+
+# ==========================================
+# DEEP HARDWARE & PHONE CONTROL API
+# ==========================================
+
+class DeepControlRequest(BaseModel):
+    target: str = "laptop1"
+    action: str
+    parameter: str = ""
+
+@app.post("/api/hardware/deep")
+async def api_deep_hardware_control(req: DeepControlRequest):
+    return await control_device_deep_tool(target=req.target, action=req.action, parameter=req.parameter)
+
 
 if __name__ == "__main__":
     import uvicorn

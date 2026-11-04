@@ -282,6 +282,32 @@ function setupEventListeners() {
   const closeNews = document.getElementById("btn-close-news");
   if (closeNews) closeNews.addEventListener("click", () => { playHudClickSound(); modalNews.classList.add("hidden"); });
 
+  const btnHudIntegrations = document.getElementById("btn-hud-integrations");
+  const modalIntegrations = document.getElementById("modal-integrations");
+  const closeIntegrations = document.getElementById("btn-close-integrations");
+  if (btnHudIntegrations) btnHudIntegrations.addEventListener("click", () => {
+    playHudClickSound();
+    if (modalIntegrations) modalIntegrations.classList.remove("hidden");
+    loadIntegrationsStatus();
+  });
+  if (closeIntegrations) closeIntegrations.addEventListener("click", () => {
+    playHudClickSound();
+    if (modalIntegrations) modalIntegrations.classList.add("hidden");
+  });
+
+  const btnHudDeepControl = document.getElementById("btn-hud-deepcontrol");
+  const modalDeepControl = document.getElementById("modal-deepcontrol");
+  const closeDeepControl = document.getElementById("btn-close-deepcontrol");
+  if (btnHudDeepControl) btnHudDeepControl.addEventListener("click", () => {
+    playHudClickSound();
+    if (modalDeepControl) modalDeepControl.classList.remove("hidden");
+    loadDeepMediaStatus();
+  });
+  if (closeDeepControl) closeDeepControl.addEventListener("click", () => {
+    playHudClickSound();
+    if (modalDeepControl) modalDeepControl.classList.add("hidden");
+  });
+
   // Inner Manager Actions
   const btnSpeakBriefing = document.getElementById("btn-speak-briefing");
   if (btnSpeakBriefing) btnSpeakBriefing.addEventListener("click", speakCurrentBriefing);
@@ -2835,4 +2861,157 @@ NODE TOPOLOGY REPORT:<br>
     }
   });
 }
+
+// ==========================================
+// CONNECTED APPS & INTEGRATIONS CONTROLLER
+// ==========================================
+
+async function loadIntegrationsStatus() {
+  try {
+    const res = await fetch("/api/integrations");
+    const d = await res.json();
+    if (d.success && d.services) {
+      Object.keys(d.services).forEach(srv => {
+        const info = d.services[srv];
+        const badge = document.getElementById(`badge-status-${srv}`);
+        if (badge) {
+          if (info.connected) {
+            badge.textContent = "Connected";
+            badge.className = "px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-950 text-emerald-400 border border-emerald-800";
+          } else {
+            badge.textContent = "Unlinked";
+            badge.className = "px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400";
+          }
+        }
+      });
+    }
+  } catch (e) {
+    console.warn("Failed to load integrations status", e);
+  }
+}
+
+async function saveIntegrationForm(service) {
+  let credentials = {};
+  if (service === "gmail") {
+    const email = document.getElementById("int-input-gmail-email")?.value.trim();
+    const pass = document.getElementById("int-input-gmail-pass")?.value.trim();
+    if (!email || !pass) { alert("Please provide both Gmail and Google App Password."); return; }
+    credentials = { email, app_password: pass };
+  } else if (service === "notion") {
+    const token = document.getElementById("int-input-notion-token")?.value.trim();
+    const dbId = document.getElementById("int-input-notion-db")?.value.trim();
+    if (!token) { alert("Please enter your Notion Integration Secret."); return; }
+    credentials = { token, database_id: dbId };
+  } else if (service === "github") {
+    const token = document.getElementById("int-input-github-token")?.value.trim();
+    if (!token) { alert("Please enter your GitHub Personal Access Token."); return; }
+    credentials = { token };
+  } else if (service === "linkedin") {
+    const token = document.getElementById("int-input-linkedin-token")?.value.trim();
+    if (!token) { alert("Please enter your LinkedIn Token or Webhook."); return; }
+    credentials = { token };
+  } else if (service === "instagram") {
+    const token = document.getElementById("int-input-instagram-token")?.value.trim();
+    if (!token) { alert("Please enter your Instagram Graph token or Webhook URL."); return; }
+    credentials = { token };
+  } else if (service === "telegram") {
+    const token = document.getElementById("int-input-telegram-token")?.value.trim();
+    if (!token) { alert("Please enter your Telegram Bot Token."); return; }
+    credentials = { token };
+  }
+
+  try {
+    const res = await fetch(`/api/integrations/${service}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ credentials })
+    });
+    const d = await res.json();
+    if (d.success) {
+      alert(`${service.toUpperCase()} credentials saved and connected!`);
+      loadIntegrationsStatus();
+    }
+  } catch (err) {
+    alert("Save error: " + err.message);
+  }
+}
+
+async function testIntegrationService(service) {
+  try {
+    const res = await fetch(`/api/integrations/${service}/test`, { method: "POST" });
+    const d = await res.json();
+    if (d.success) {
+      alert(d.message || `${service.toUpperCase()} verified successfully!`);
+      loadIntegrationsStatus();
+    } else {
+      alert(`Test failed: ${d.error || 'Check configuration'}`);
+    }
+  } catch (err) {
+    alert("Connection error: " + err.message);
+  }
+}
+
+// ==========================================
+// DEEP HARDWARE & MEDIA ACTIONS
+// ==========================================
+
+async function dispatchMediaAction(action, parameter = "") {
+  try {
+    const res = await fetch("/api/media/control", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ device: "laptop1", action, parameter })
+    });
+    const d = await res.json();
+    setTimeout(loadDeepMediaStatus, 400);
+  } catch (e) {}
+}
+
+async function loadDeepMediaStatus() {
+  const lbl = document.getElementById("deep-now-playing-text");
+  try {
+    const res = await fetch("/api/media/status");
+    const d = await res.json();
+    if (lbl) lbl.textContent = d.output || "No active playerctl media stream";
+  } catch (e) {
+    if (lbl) lbl.textContent = "Offline / No media stream";
+  }
+}
+
+async function dispatchDeepDevice(target, action, parameter = "") {
+  try {
+    const res = await fetch("/api/hardware/deep", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target, action, parameter })
+    });
+    const d = await res.json();
+    if (!d.success && d.error) alert(d.error);
+  } catch (e) {}
+}
+
+async function dispatchPhoneDeep(action, parameter = "") {
+  return dispatchDeepDevice("phone", action, parameter);
+}
+
+async function syncUniversalClipboard() {
+  const preview = document.getElementById("deep-clipboard-preview");
+  if (preview) preview.textContent = "Synchronizing neural clipboard...";
+  try {
+    const res = await fetch("/api/clipboard", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ device: "laptop1", action: "sync" })
+    });
+    const d = await res.json();
+    if (d.success && preview) {
+      preview.textContent = d.synced_content ? `Synced: "${d.synced_content}"` : "Clipboard synced (empty).";
+    } else if (preview) {
+      preview.textContent = d.error || "Clipboard synchronization failed";
+    }
+  } catch (e) {
+    if (preview) preview.textContent = "Error: " + e.message;
+  }
+}
+
 

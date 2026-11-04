@@ -1066,4 +1066,350 @@ async def emergency_stop_tool() -> dict:
     await run_command("laptop2", "pactl set-sink-mute @DEFAULT_SINK@ 1 || true")
     return {"success": True, "message": "Emergency stop executed. Audio muted, active operations halted."}
 
+# ==========================================
+# CONNECTED APPS & INTEGRATIONS ENGINE
+# ==========================================
+
+async def manage_integrations_tool(action: str, service: str = "", credentials: dict = None) -> dict:
+    import database as db
+    act = action.lower().strip()
+    srv = service.lower().strip()
+
+    if act == "list":
+        connected = db.list_integrations()
+        all_services = ["gmail", "notion", "github", "linkedin", "instagram", "spotify", "telegram", "smart_home"]
+        result = {}
+        for s in all_services:
+            info = connected.get(s, {"status": "unlinked", "updated_at": 0})
+            result[s] = {
+                "name": s.replace("_", " ").title(),
+                "status": info["status"],
+                "connected": info["status"] == "connected",
+                "updated_at": info["updated_at"]
+            }
+        return {"success": True, "services": result}
+
+    elif act == "get":
+        if not srv:
+            return {"success": False, "error": "service required"}
+        record = db.get_integration(srv)
+        if record:
+            creds = record.get("credentials", {})
+            masked = {k: ("***" if "token" in k or "pass" in k or "secret" in k else v) for k, v in creds.items()}
+            return {"success": True, "service": srv, "status": record["status"], "credentials": masked}
+        return {"success": True, "service": srv, "status": "unlinked", "credentials": {}}
+
+    elif act in ["save", "connect"]:
+        if not srv or not credentials:
+            return {"success": False, "error": "service and credentials dictionary required"}
+        db.save_integration(srv, credentials, status="connected")
+        return {"success": True, "service": srv, "status": "connected", "message": f"{srv.capitalize()} connected successfully."}
+
+    elif act in ["delete", "disconnect"]:
+        if not srv:
+            return {"success": False, "error": "service required"}
+        db.delete_integration(srv)
+        return {"success": True, "service": srv, "status": "unlinked", "message": f"{srv.capitalize()} disconnected."}
+
+    elif act == "test":
+        if not srv:
+            return {"success": False, "error": "service required"}
+        record = db.get_integration(srv)
+        if not record:
+            return {"success": False, "error": f"{srv.capitalize()} is not configured"}
+        creds = record.get("credentials", {})
+        if srv == "github":
+            token = creds.get("token") or creds.get("pat")
+            if token:
+                import urllib.request
+                try:
+                    req = urllib.request.Request("https://api.github.com/user", headers={"Authorization": f"Bearer {token}", "User-Agent": "Roborabbit/2.0"})
+                    with urllib.request.urlopen(req, timeout=5) as resp:
+                        user_data = json.loads(resp.read().decode())
+                        return {"success": True, "message": f"GitHub verified as {user_data.get('login')}", "user": user_data.get("login")}
+                except Exception as e:
+                    return {"success": False, "error": f"GitHub verification failed: {e}"}
+        elif srv == "notion":
+            token = creds.get("token")
+            if token:
+                import urllib.request
+                try:
+                    req = urllib.request.Request("https://api.notion.com/v1/users/me", headers={"Authorization": f"Bearer {token}", "Notion-Version": "2022-06-28", "User-Agent": "Roborabbit/2.0"})
+                    with urllib.request.urlopen(req, timeout=5) as resp:
+                        notion_data = json.loads(resp.read().decode())
+                        return {"success": True, "message": f"Notion bot verified: {notion_data.get('name')}", "bot": notion_data.get("name")}
+                except Exception as e:
+                    return {"success": False, "error": f"Notion verification failed: {e}"}
+        elif srv == "gmail":
+            return await sync_gmail_tool(user_email=creds.get("email"), app_password=creds.get("app_password"))
+        return {"success": True, "message": f"{srv.capitalize()} configuration saved and online."}
+
+    return {"success": False, "error": f"Unknown action: {action}"}
+
+# ==========================================
+# NOTION TOOL
+# ==========================================
+
+async def notion_tool(action: str, title: str = "", content: str = "", database_id: str = "") -> dict:
+    """Notion Integration: search pages, read notes, and create pages"""
+    import database as db
+    import urllib.request
+    act = action.lower().strip()
+    record = db.get_integration("notion")
+    if not record or not record.get("credentials", {}).get("token"):
+        return {
+            "success": False,
+            "error": "Notion is not connected. Please connect your Notion API token in the Integrations Hub."
+        }
+    token = record["credentials"]["token"]
+    db_id = database_id or record["credentials"].get("database_id", "")
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json",
+        "User-Agent": "Roborabbit/2.0"
+    }
+
+    try:
+        if act in ["search", "list_pages"]:
+            payload = json.dumps({"query": title or "", "page_size": 10}).encode()
+            req = urllib.request.Request("https://api.notion.com/v1/search", data=payload, headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = json.loads(resp.read().decode())
+                results = []
+                for p in data.get("results", []):
+                    p_title = "Untitled"
+                    props = p.get("properties", {})
+                    for prop in props.values():
+                        if prop.get("id") == "title" and prop.get("title"):
+                            p_title = "".join([t.get("plain_text", "") for t in prop["title"]])
+                            break
+                    results.append({"id": p.get("id"), "title": p_title, "url": p.get("url")})
+                return {"success": True, "count": len(results), "pages": results}
+
+        elif act in ["create_page", "add_note"]:
+            if not title:
+                return {"success": False, "error": "title is required"}
+            parent = {"database_id": db_id} if db_id else {"page_id": record["credentials"].get("parent_page_id", "")}
+            if not parent.get("database_id") and not parent.get("page_id"):
+                payload = json.dumps({"query": "", "page_size": 1}).encode()
+                req = urllib.request.Request("https://api.notion.com/v1/search", data=payload, headers=headers, method="POST")
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    first = json.loads(resp.read().decode()).get("results", [])
+                    if first:
+                        parent = {"page_id": first[0]["id"]} if first[0]["object"] == "page" else {"database_id": first[0]["id"]}
+
+            page_data = {
+                "parent": parent,
+                "properties": {
+                    "title": [{"text": {"content": title}}]
+                },
+                "children": [
+                    {
+                        "object": "block",
+                        "type": "paragraph",
+                        "paragraph": {
+                            "rich_text": [{"type": "text", "text": {"content": content or "Note captured by Roborabbit Personal Assistant."}}]
+                        }
+                    }
+                ]
+            }
+            req = urllib.request.Request("https://api.notion.com/v1/pages", data=json.dumps(page_data).encode(), headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                created = json.loads(resp.read().decode())
+                return {"success": True, "page_id": created.get("id"), "url": created.get("url"), "title": title}
+    except Exception as e:
+        return {"success": False, "error": f"Notion API error: {str(e)}"}
+
+    return {"success": False, "error": f"Unknown Notion action: {action}"}
+
+# ==========================================
+# GITHUB TOOL
+# ==========================================
+
+async def github_tool(action: str, repo: str = "", title: str = "", body: str = "") -> dict:
+    """GitHub Integration: inspect repositories, PRs, and issues"""
+    import database as db
+    import urllib.request
+    act = action.lower().strip()
+    record = db.get_integration("github")
+    token = record.get("credentials", {}).get("token") if record else ""
+
+    if not token:
+        # Fallback to local git CLI on laptop
+        if act == "status":
+            res = await run_command("laptop1", "git status -s")
+            return {"success": res["success"], "output": res["stdout"]}
+        return {"success": False, "error": "GitHub Personal Access Token not configured. Please connect in Integrations Hub."}
+
+    headers = {"Authorization": f"Bearer {token}", "User-Agent": "Roborabbit/2.0", "Accept": "application/vnd.github.v3+json"}
+    try:
+        if act in ["list_repos", "repos"]:
+            req = urllib.request.Request("https://api.github.com/user/repos?sort=updated&per_page=10", headers=headers)
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = json.loads(resp.read().decode())
+                repos = [{"name": r["name"], "full_name": r["full_name"], "url": r["html_url"], "stars": r["stargazers_count"]} for r in data]
+                return {"success": True, "count": len(repos), "repos": repos}
+        elif act in ["create_issue", "issue"]:
+            if not repo or not title:
+                return {"success": False, "error": "repo ('owner/repo') and title are required"}
+            payload = json.dumps({"title": title, "body": body or "Created by Roborabbit"}).encode()
+            req = urllib.request.Request(f"https://api.github.com/repos/{repo}/issues", data=payload, headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                issue = json.loads(resp.read().decode())
+                return {"success": True, "issue_url": issue.get("html_url"), "number": issue.get("number")}
+    except Exception as e:
+        return {"success": False, "error": f"GitHub API error: {str(e)}"}
+    return {"success": False, "error": f"Unknown GitHub action: {action}"}
+
+# ==========================================
+# SYSTEM MEDIA & PLAYERCTL TOOL
+# ==========================================
+
+async def media_player_tool(device: str = "laptop1", action: str = "play_pause", parameter: str = "") -> dict:
+    """Controls media playback via playerctl on Laptop or Server"""
+    act = action.lower().strip()
+    target = "laptop1" if device in ["laptop1", "laptop", "main"] else "laptop2"
+
+    if act in ["play_pause", "toggle"]:
+        cmd = "playerctl play-pause || true"
+    elif act == "play":
+        cmd = "playerctl play || true"
+    elif act == "pause":
+        cmd = "playerctl pause || true"
+    elif act in ["next", "skip"]:
+        cmd = "playerctl next || true"
+    elif act in ["prev", "previous"]:
+        cmd = "playerctl previous || true"
+    elif act in ["status", "now_playing", "current"]:
+        cmd = "playerctl metadata --format '{{artist}} - {{title}} ({{status}})' 2>/dev/null || echo 'No active media player'"
+    elif act == "volume":
+        vol = parameter.strip().rstrip("%")
+        cmd = f"playerctl volume 0.{vol} || pactl set-sink-volume @DEFAULT_SINK@ {vol}%"
+    else:
+        cmd = "playerctl play-pause || true"
+
+    res = await run_command(target, cmd)
+    return {"success": res["success"], "device": target, "action": act, "output": res["stdout"].strip() or "Media command sent"}
+
+# ==========================================
+# CROSS-DEVICE CLIPBOARD TOOL
+# ==========================================
+
+async def clipboard_tool(device: str = "laptop1", action: str = "read", text: str = "") -> dict:
+    """Read, write, and sync clipboard across Laptop, Server, and Mobile"""
+    act = action.lower().strip()
+    dev_norm = device.lower().strip()
+
+    if dev_norm in ["phone", "mobile", "android"]:
+        if act in ["write", "copy", "set"]:
+            import server as srv
+            srv.phone_pending_commands.append({"action": "clipboard", "text": text})
+            return {"success": True, "device": "Mobile", "action": "write", "message": "Text sent to Phone clipboard"}
+        return {"success": False, "error": "Direct reading of phone clipboard requires app foreground"}
+
+    target = "laptop1" if dev_norm in ["laptop1", "laptop", "main"] else "laptop2"
+    if act in ["read", "get"]:
+        res = await run_command(target, "xclip -o -selection clipboard 2>/dev/null || echo ''")
+        return {"success": res["success"], "device": target, "action": "read", "clipboard_content": res["stdout"].strip()}
+    elif act in ["write", "copy", "set"]:
+        escaped = text.replace("'", "'\\''")
+        res = await run_command(target, f"printf '%s' '{escaped}' | xclip -selection clipboard")
+        return {"success": res["success"], "device": target, "action": "write", "message": "Copied to clipboard"}
+    elif act == "sync":
+        # Read from source and write to target
+        res = await run_command(target, "xclip -o -selection clipboard 2>/dev/null || echo ''")
+        content = res["stdout"].strip()
+        if content:
+            other = "laptop2" if target == "laptop1" else "laptop1"
+            escaped = content.replace("'", "'\\''")
+            await run_command(other, f"printf '%s' '{escaped}' | xclip -selection clipboard")
+            import server as srv
+            srv.phone_pending_commands.append({"action": "clipboard", "text": content})
+            return {"success": True, "action": "sync", "synced_content": content[:100], "message": "Clipboard synced across Laptop, Server, and Mobile."}
+        return {"success": False, "error": "Clipboard empty"}
+
+    return {"success": False, "error": f"Unknown clipboard action: {action}"}
+
+# ==========================================
+# DEEP HARDWARE & GUI CONTROL TOOL
+# ==========================================
+
+async def control_device_deep_tool(target: str, action: str, parameter: str = "") -> dict:
+    """Deep OS-level and Phone control: mouse, keyboard, brightness, volume, flashlight, dialing, app launching"""
+    tgt = target.lower().strip()
+    act = action.lower().strip()
+    param = parameter.strip()
+
+    # PHONE CONTROLS
+    if tgt in ["phone", "mobile", "android"]:
+        import server as srv
+        if act in ["open_app", "launch_app"]:
+            srv.phone_pending_commands.append({"action": "open_app", "app": param, "package": ""})
+            return {"success": True, "device": "Mobile", "action": "open_app", "app": param, "message": f"Sent launch command for {param} to phone"}
+        elif act == "open_url":
+            srv.phone_pending_commands.append({"action": "open_url", "url": param})
+            return {"success": True, "device": "Mobile", "action": "open_url", "url": param}
+        elif act in ["locate", "ring", "find_phone"]:
+            srv.phone_pending_commands.append({"action": "locate"})
+            return {"success": True, "device": "Mobile", "action": "locate", "message": "Phone tracking chime and vibration beacon triggered"}
+        elif act in ["vibrate"]:
+            srv.phone_pending_commands.append({"action": "vibrate"})
+            return {"success": True, "device": "Mobile", "action": "vibrate"}
+        elif act in ["dial", "call"]:
+            srv.phone_pending_commands.append({"action": "dial", "number": param})
+            return {"success": True, "device": "Mobile", "action": "dial", "number": param}
+        elif act in ["sms"]:
+            srv.phone_pending_commands.append({"action": "sms", "number": param, "message": "Alert from RoboRabbit"})
+            return {"success": True, "device": "Mobile", "action": "sms", "number": param}
+        return {"success": False, "error": f"Unknown phone action: {act}"}
+
+    # LAPTOP / SERVER CONTROLS
+    dev = "laptop1" if tgt in ["laptop1", "laptop", "main"] else "laptop2"
+
+    if act in ["mouse_click", "click"]:
+        button = param or "1"  # 1 = left, 3 = right
+        res = await run_command(dev, f"xdotool click {button}")
+        return {"success": res["success"], "device": dev, "action": "mouse_click"}
+
+    elif act in ["mouse_move", "move_cursor"]:
+        # param: "x y"
+        parts = param.split()
+        if len(parts) >= 2:
+            x, y = parts[0], parts[1]
+            res = await run_command(dev, f"xdotool mousemove {x} {y}")
+            return {"success": res["success"], "device": dev, "action": "mouse_move", "coordinates": f"({x}, {y})"}
+        return {"success": False, "error": "Parameter must be 'x y'"}
+
+    elif act in ["type", "type_text"]:
+        escaped = param.replace('"', '\\"')
+        res = await run_command(dev, f'xdotool type --delay 20 "{escaped}"')
+        return {"success": res["success"], "device": dev, "action": "type_text"}
+
+    elif act in ["key", "press_key"]:
+        res = await run_command(dev, f"xdotool key {param}")
+        return {"success": res["success"], "device": dev, "action": "press_key", "key": param}
+
+    elif act in ["brightness", "set_brightness"]:
+        pct = param.rstrip("%") or "80"
+        res = await run_command(dev, f"brightnessctl set {pct}% || xrandr --output $(xrandr | grep ' connected' | head -1 | cut -d' ' -f1) --brightness 0.{pct} || true")
+        return {"success": True, "device": dev, "action": "set_brightness", "brightness": f"{pct}%"}
+
+    elif act in ["volume", "set_volume"]:
+        pct = param.rstrip("%") or "50"
+        res = await run_command(dev, f"pactl set-sink-volume @DEFAULT_SINK@ {pct}%")
+        return {"success": res["success"], "device": dev, "action": "set_volume", "volume": f"{pct}%"}
+
+    elif act in ["mute", "unmute"]:
+        mute_val = "1" if act == "mute" else "0"
+        res = await run_command(dev, f"pactl set-sink-mute @DEFAULT_SINK@ {mute_val}")
+        return {"success": res["success"], "device": dev, "action": act}
+
+    elif act in ["lock", "lock_screen"]:
+        res = await run_command(dev, "loginctl lock-session || swaylock || true")
+        return {"success": res["success"], "device": dev, "action": "lock_screen"}
+
+    return {"success": False, "error": f"Unknown deep action: {action}"}
+
+
 

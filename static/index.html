@@ -189,6 +189,19 @@
         <i data-lucide="eye" class="w-3.5 h-3.5 text-teal-400"></i>
         <span>Screen Vision</span>
       </button>
+
+      <!-- Connected Apps & Integrations (#5 & #15) -->
+      <button id="btn-hud-integrations" class="jarvis-hud-pill border-violet-500/40 text-violet-300 hover:border-violet-400 bg-violet-950/20 shadow-sm shadow-violet-500/10" title="Connect Gmail, Notion, GitHub, LinkedIn, Insta, Spotify">
+        <i data-lucide="plug-zap" class="w-3.5 h-3.5 text-violet-400"></i>
+        <span>Integrations</span>
+        <span id="badge-integrations-count" class="jarvis-hud-badge bg-violet-900/80 text-violet-300 border border-violet-700">Apps</span>
+      </button>
+
+      <!-- Deep Device Control & Media Deck (#3) -->
+      <button id="btn-hud-deepcontrol" class="jarvis-hud-pill border-pink-500/40 text-pink-300 hover:border-pink-400 bg-pink-950/20 shadow-sm shadow-pink-500/10" title="Deep Hardware Controls, Media & Phone Deck">
+        <i data-lucide="sliders" class="w-3.5 h-3.5 text-pink-400"></i>
+        <span>Deep Control</span>
+      </button>
     </div>
 
     <!-- Right Live Intel Mini Ticker -->
@@ -1003,6 +1016,365 @@
       <div class="cyber-terminal-input-row">
         <span class="text-emerald-400 font-bold select-none text-xs">scempyy@roborabbit:~$</span>
         <input type="text" id="terminal-input" class="cyber-terminal-input" placeholder="Enter cyber command (e.g. status, devices, briefing, youtube)..." autocomplete="off" spellcheck="false">
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. CONNECTED APPS & INTEGRATIONS VAULT MODAL -->
+  <div id="modal-integrations" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-6 hidden">
+    <div class="jarvis-hud-card w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden">
+      <div class="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/90 shrink-0">
+        <div class="flex items-center gap-2.5">
+          <i data-lucide="plug-zap" class="w-5 h-5 text-violet-400"></i>
+          <div>
+            <h3 class="font-bold text-white text-base">Connected Apps & Services Vault</h3>
+            <p class="text-xs text-slate-400">Sync Gmail, Notion, GitHub, LinkedIn, Instagram, Spotify & Mobile</p>
+          </div>
+        </div>
+        <button id="btn-close-integrations" class="p-1.5 text-slate-400 hover:text-white transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4 text-xs">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5" id="integrations-cards-grid">
+          <!-- 1. GMAIL -->
+          <div class="p-4 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-red-500/50 transition flex flex-col justify-between gap-3">
+            <div class="flex items-start justify-between">
+              <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-lg bg-red-950/80 border border-red-500/40 flex items-center justify-center text-red-400">
+                  <i data-lucide="mail" class="w-4 h-4"></i>
+                </div>
+                <div>
+                  <div class="font-bold text-white text-xs">Gmail & Google Workspace</div>
+                  <div class="text-[11px] text-slate-400">Real-time IMAP email inbox sync</div>
+                </div>
+              </div>
+              <span id="badge-status-gmail" class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400">Unlinked</span>
+            </div>
+            <div class="space-y-1.5">
+              <input type="email" id="int-input-gmail-email" placeholder="your.name@gmail.com" class="w-full bg-slate-850 border border-slate-750 rounded-lg px-2.5 py-1 text-slate-200 text-xs focus:outline-none focus:border-red-500">
+              <input type="password" id="int-input-gmail-pass" placeholder="16-char Google App Password" class="w-full bg-slate-850 border border-slate-750 rounded-lg px-2.5 py-1 text-slate-200 text-xs focus:outline-none focus:border-red-500">
+            </div>
+            <div class="flex items-center justify-between pt-1">
+              <a href="https://myaccount.google.com/apppasswords" target="_blank" class="text-[10px] text-cyan-400 hover:underline">Get App Password</a>
+              <div class="flex gap-2">
+                <button onclick="saveIntegrationForm('gmail')" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium">Save</button>
+                <button onclick="testIntegrationService('gmail')" class="px-3 py-1 rounded bg-red-600 hover:bg-red-500 text-white font-medium">Sync</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. NOTION -->
+          <div class="p-4 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-slate-500/50 transition flex flex-col justify-between gap-3">
+            <div class="flex items-start justify-between">
+              <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-lg bg-slate-800 border border-slate-600 flex items-center justify-center text-slate-200 font-bold">N</div>
+                <div>
+                  <div class="font-bold text-white text-xs">Notion Workspace</div>
+                  <div class="text-[11px] text-slate-400">Search pages, capture notes & tasks</div>
+                </div>
+              </div>
+              <span id="badge-status-notion" class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400">Unlinked</span>
+            </div>
+            <div class="space-y-1.5">
+              <input type="password" id="int-input-notion-token" placeholder="Internal Integration Secret (secret_...)" class="w-full bg-slate-850 border border-slate-750 rounded-lg px-2.5 py-1 text-slate-200 text-xs focus:outline-none focus:border-slate-400">
+              <input type="text" id="int-input-notion-db" placeholder="Database ID (optional)" class="w-full bg-slate-850 border border-slate-750 rounded-lg px-2.5 py-1 text-slate-200 text-xs focus:outline-none focus:border-slate-400">
+            </div>
+            <div class="flex items-center justify-between pt-1">
+              <a href="https://www.notion.so/my-integrations" target="_blank" class="text-[10px] text-cyan-400 hover:underline">Create Notion Token</a>
+              <div class="flex gap-2">
+                <button onclick="saveIntegrationForm('notion')" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium">Save</button>
+                <button onclick="testIntegrationService('notion')" class="px-3 py-1 rounded bg-slate-200 hover:bg-white text-slate-950 font-medium">Verify</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. GITHUB -->
+          <div class="p-4 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-purple-500/50 transition flex flex-col justify-between gap-3">
+            <div class="flex items-start justify-between">
+              <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-lg bg-purple-950/80 border border-purple-500/40 flex items-center justify-center text-purple-400">
+                  <i data-lucide="github" class="w-4 h-4"></i>
+                </div>
+                <div>
+                  <div class="font-bold text-white text-xs">GitHub Repos & PRs</div>
+                  <div class="text-[11px] text-slate-400">Repos, issue creation & commit checks</div>
+                </div>
+              </div>
+              <span id="badge-status-github" class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400">Unlinked</span>
+            </div>
+            <div class="space-y-1.5">
+              <input type="password" id="int-input-github-token" placeholder="Personal Access Token (ghp_...)" class="w-full bg-slate-850 border border-slate-750 rounded-lg px-2.5 py-1 text-slate-200 text-xs focus:outline-none focus:border-purple-500">
+            </div>
+            <div class="flex items-center justify-between pt-1">
+              <a href="https://github.com/settings/tokens" target="_blank" class="text-[10px] text-cyan-400 hover:underline">Generate PAT</a>
+              <div class="flex gap-2">
+                <button onclick="saveIntegrationForm('github')" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium">Save</button>
+                <button onclick="testIntegrationService('github')" class="px-3 py-1 rounded bg-purple-600 hover:bg-purple-500 text-white font-medium">Verify</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4. LINKEDIN -->
+          <div class="p-4 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-blue-500/50 transition flex flex-col justify-between gap-3">
+            <div class="flex items-start justify-between">
+              <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-lg bg-blue-950/80 border border-blue-500/40 flex items-center justify-center text-blue-400">
+                  <i data-lucide="linkedin" class="w-4 h-4"></i>
+                </div>
+                <div>
+                  <div class="font-bold text-white text-xs">LinkedIn Broadcast</div>
+                  <div class="text-[11px] text-slate-400">Post drafts & professional intel</div>
+                </div>
+              </div>
+              <span id="badge-status-linkedin" class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400">Unlinked</span>
+            </div>
+            <div class="space-y-1.5">
+              <input type="password" id="int-input-linkedin-token" placeholder="LinkedIn Access Token / Webhook" class="w-full bg-slate-850 border border-slate-750 rounded-lg px-2.5 py-1 text-slate-200 text-xs focus:outline-none focus:border-blue-500">
+            </div>
+            <div class="flex items-center justify-between pt-1">
+              <span class="text-[10px] text-slate-400">Developer Portal Token</span>
+              <div class="flex gap-2">
+                <button onclick="saveIntegrationForm('linkedin')" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium">Save</button>
+                <button onclick="testIntegrationService('linkedin')" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-medium">Connect</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 5. INSTAGRAM -->
+          <div class="p-4 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-pink-500/50 transition flex flex-col justify-between gap-3">
+            <div class="flex items-start justify-between">
+              <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-lg bg-pink-950/80 border border-pink-500/40 flex items-center justify-center text-pink-400">
+                  <i data-lucide="instagram" class="w-4 h-4"></i>
+                </div>
+                <div>
+                  <div class="font-bold text-white text-xs">Instagram & Reels</div>
+                  <div class="text-[11px] text-slate-400">Reels analyzer & notification alerts</div>
+                </div>
+              </div>
+              <span id="badge-status-instagram" class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400">Unlinked</span>
+            </div>
+            <div class="space-y-1.5">
+              <input type="text" id="int-input-instagram-token" placeholder="Instagram Graph / Webhook URL" class="w-full bg-slate-850 border border-slate-750 rounded-lg px-2.5 py-1 text-slate-200 text-xs focus:outline-none focus:border-pink-500">
+            </div>
+            <div class="flex items-center justify-between pt-1">
+              <span class="text-[10px] text-slate-400">Watch-Reels skill enabled</span>
+              <div class="flex gap-2">
+                <button onclick="saveIntegrationForm('instagram')" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium">Save</button>
+                <button onclick="testIntegrationService('instagram')" class="px-3 py-1 rounded bg-pink-600 hover:bg-pink-500 text-white font-medium">Connect</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 6. SPOTIFY & MEDIA -->
+          <div class="p-4 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-emerald-500/50 transition flex flex-col justify-between gap-3">
+            <div class="flex items-start justify-between">
+              <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-lg bg-emerald-950/80 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                  <i data-lucide="music" class="w-4 h-4"></i>
+                </div>
+                <div>
+                  <div class="font-bold text-white text-xs">Spotify & System Media</div>
+                  <div class="text-[11px] text-slate-400">Global playerctl & track controllers</div>
+                </div>
+              </div>
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-950 text-emerald-400 border border-emerald-800">Ready</span>
+            </div>
+            <div class="text-[11px] text-slate-300">
+              Controls media playback on Laptop and Server with zero configuration required.
+            </div>
+            <div class="flex items-center justify-end gap-2 pt-1">
+              <button onclick="dispatchMediaAction('play_pause')" class="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-medium flex items-center gap-1">
+                <i data-lucide="play" class="w-3 h-3"></i>
+                <span>Toggle Playback</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 7. MOBILE PHONE BRIDGE -->
+          <div class="p-4 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-cyan-500/50 transition flex flex-col justify-between gap-3">
+            <div class="flex items-start justify-between">
+              <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-lg bg-cyan-950/80 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
+                  <i data-lucide="smartphone" class="w-4 h-4"></i>
+                </div>
+                <div>
+                  <div class="font-bold text-white text-xs">Mobile Companion Bridge</div>
+                  <div class="text-[11px] text-slate-400">Live notifications, battery, TTS & dialer</div>
+                </div>
+              </div>
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-950 text-cyan-400 border border-cyan-800">Connected</span>
+            </div>
+            <div class="text-[11px] text-slate-300">
+              Vivo V2437 phone synchronized. Notification listener service compiled into APK.
+            </div>
+            <div class="flex items-center justify-between pt-1">
+              <a href="/static/Roborabbit.apk" download class="text-[10px] text-cyan-400 underline">Get Updated APK</a>
+              <button onclick="dispatchPhoneDeep('locate')" class="px-3 py-1 rounded bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold">Ring Phone</button>
+            </div>
+          </div>
+
+          <!-- 8. TELEGRAM -->
+          <div class="p-4 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-sky-500/50 transition flex flex-col justify-between gap-3">
+            <div class="flex items-start justify-between">
+              <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-lg bg-sky-950/80 border border-sky-500/40 flex items-center justify-center text-sky-400">
+                  <i data-lucide="send" class="w-4 h-4"></i>
+                </div>
+                <div>
+                  <div class="font-bold text-white text-xs">Telegram Bot Alerts</div>
+                  <div class="text-[11px] text-slate-400">Two-way notifications & remote triggers</div>
+                </div>
+              </div>
+              <span id="badge-status-telegram" class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400">Unlinked</span>
+            </div>
+            <div class="space-y-1.5">
+              <input type="password" id="int-input-telegram-token" placeholder="Bot API Token (from @BotFather)" class="w-full bg-slate-850 border border-slate-750 rounded-lg px-2.5 py-1 text-slate-200 text-xs focus:outline-none focus:border-sky-500">
+            </div>
+            <div class="flex items-center justify-end gap-2 pt-1">
+              <button onclick="saveIntegrationForm('telegram')" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium">Save</button>
+              <button onclick="testIntegrationService('telegram')" class="px-3 py-1 rounded bg-sky-600 hover:bg-sky-500 text-white font-medium">Connect</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8. DEEP HARDWARE & TACTILE CYBER DECK MODAL -->
+  <div id="modal-deepcontrol" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-6 hidden">
+    <div class="jarvis-hud-card w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden">
+      <div class="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/90 shrink-0">
+        <div class="flex items-center gap-2.5">
+          <i data-lucide="sliders" class="w-5 h-5 text-pink-400"></i>
+          <div>
+            <h3 class="font-bold text-white text-base">Deep Hardware & Tactile Cyber Deck</h3>
+            <p class="text-xs text-slate-400">Complete control across Laptop, Server & Mobile Phone</p>
+          </div>
+        </div>
+        <button id="btn-close-deepcontrol" class="p-1.5 text-slate-400 hover:text-white transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4 text-xs">
+        <!-- Media Player Console -->
+        <div class="p-3.5 rounded-xl bg-slate-900/95 border border-slate-800 space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-slate-200 text-xs flex items-center gap-2">
+              <i data-lucide="disc" class="w-4 h-4 text-pink-400 animate-spin"></i>
+              <span>Global Media Deck (playerctl)</span>
+            </span>
+            <span id="deep-now-playing-text" class="text-[11px] text-cyan-400 font-mono truncate max-w-xs">Connecting media stream...</span>
+          </div>
+          <div class="flex items-center justify-center gap-3 pt-1">
+            <button onclick="dispatchMediaAction('previous')" class="p-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200" title="Previous"><i data-lucide="skip-back" class="w-4 h-4"></i></button>
+            <button onclick="dispatchMediaAction('play_pause')" class="p-3 rounded-xl bg-pink-600 hover:bg-pink-500 text-white font-bold" title="Play/Pause"><i data-lucide="play" class="w-5 h-5"></i></button>
+            <button onclick="dispatchMediaAction('next')" class="p-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200" title="Next"><i data-lucide="skip-forward" class="w-4 h-4"></i></button>
+            <button onclick="dispatchDeepDevice('laptop1', 'mute')" class="p-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-rose-400" title="Mute Audio"><i data-lucide="volume-x" class="w-4 h-4"></i></button>
+          </div>
+        </div>
+
+        <!-- Hardware Display & Brightness Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <!-- Laptop Controls -->
+          <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2.5">
+            <div class="font-bold text-slate-200 text-xs flex items-center justify-between">
+              <span>💻 Laptop Controls</span>
+              <span class="text-cyan-400 font-mono text-[10px]">robo</span>
+            </div>
+            <div class="space-y-1">
+              <span class="text-[10px] text-slate-400">Display Brightness:</span>
+              <div class="grid grid-cols-4 gap-1.5">
+                <button onclick="dispatchDeepDevice('laptop1', 'brightness', '25')" class="py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300">25%</button>
+                <button onclick="dispatchDeepDevice('laptop1', 'brightness', '50')" class="py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300">50%</button>
+                <button onclick="dispatchDeepDevice('laptop1', 'brightness', '75')" class="py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300">75%</button>
+                <button onclick="dispatchDeepDevice('laptop1', 'brightness', '100')" class="py-1 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 font-bold">100%</button>
+              </div>
+            </div>
+            <div class="flex gap-2 pt-1">
+              <button onclick="dispatchDeepDevice('laptop1', 'lock')" class="flex-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium flex items-center justify-center gap-1.5">
+                <i data-lucide="lock" class="w-3.5 h-3.5 text-amber-400"></i>
+                <span>Lock Screen</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Server Controls -->
+          <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2.5">
+            <div class="font-bold text-slate-200 text-xs flex items-center justify-between">
+              <span>🖥️ Server Controls</span>
+              <span class="text-purple-400 font-mono text-[10px]">scempyy</span>
+            </div>
+            <div class="space-y-1">
+              <span class="text-[10px] text-slate-400">Power & Display:</span>
+              <div class="flex gap-2">
+                <button onclick="dispatchDeepDevice('laptop2', 'brightness', '100')" class="flex-1 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200">Wake Screen</button>
+                <button onclick="dispatchDeepDevice('laptop2', 'lock')" class="flex-1 py-1.5 rounded bg-purple-900/60 hover:bg-purple-800 border border-purple-500/40 text-purple-200 font-medium">Blackout / Sleep</button>
+              </div>
+            </div>
+            <div class="pt-1">
+              <button onclick="dispatchDeepDevice('laptop2', 'type', 'clear\n')" class="w-full py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium">Clear TTY Console</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Cross-Device Clipboard -->
+        <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-slate-200 text-xs flex items-center gap-1.5">
+              <i data-lucide="clipboard-copy" class="w-4 h-4 text-cyan-400"></i>
+              <span>Universal Clipboard Sync</span>
+            </span>
+            <button onclick="syncUniversalClipboard()" class="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold text-[10px] flex items-center gap-1">
+              <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+              <span>Sync All 3 Devices</span>
+            </button>
+          </div>
+          <div id="deep-clipboard-preview" class="p-2.5 rounded-lg bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300 truncate">
+            Click sync to read current clipboard...
+          </div>
+        </div>
+
+        <!-- Tactile Phone Quick Launcher -->
+        <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-slate-200 text-xs flex items-center gap-1.5">
+              <i data-lucide="smartphone" class="w-4 h-4 text-emerald-400"></i>
+              <span>Tactile Phone Deck (Vivo V2437)</span>
+            </span>
+            <span class="text-[10px] text-emerald-400 font-mono">NEURAL BRIDGE READY</span>
+          </div>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <button onclick="dispatchPhoneDeep('open_app', 'whatsapp')" class="p-2 rounded-lg bg-slate-850 hover:bg-slate-800 border border-slate-750 flex items-center justify-center gap-2 text-slate-200">
+              <i data-lucide="message-circle" class="w-4 h-4 text-emerald-400"></i>
+              <span>WhatsApp</span>
+            </button>
+            <button onclick="dispatchPhoneDeep('open_app', 'instagram')" class="p-2 rounded-lg bg-slate-850 hover:bg-slate-800 border border-slate-750 flex items-center justify-center gap-2 text-slate-200">
+              <i data-lucide="instagram" class="w-4 h-4 text-pink-400"></i>
+              <span>Instagram</span>
+            </button>
+            <button onclick="dispatchPhoneDeep('open_app', 'spotify')" class="p-2 rounded-lg bg-slate-850 hover:bg-slate-800 border border-slate-750 flex items-center justify-center gap-2 text-slate-200">
+              <i data-lucide="music" class="w-4 h-4 text-emerald-400"></i>
+              <span>Spotify</span>
+            </button>
+            <button onclick="dispatchPhoneDeep('open_app', 'camera')" class="p-2 rounded-lg bg-slate-850 hover:bg-slate-800 border border-slate-750 flex items-center justify-center gap-2 text-slate-200">
+              <i data-lucide="camera" class="w-4 h-4 text-cyan-400"></i>
+              <span>Camera</span>
+            </button>
+          </div>
+          <div class="flex gap-2 pt-1">
+            <button onclick="dispatchPhoneDeep('locate')" class="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5">
+              <i data-lucide="bell-ring" class="w-4 h-4"></i>
+              <span>Ring Beacon (Locate Phone)</span>
+            </button>
+            <button onclick="dispatchPhoneDeep('vibrate')" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium">
+              Vibrate
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
