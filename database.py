@@ -362,6 +362,25 @@ def send_local_email(recipient: str, subject: str, body: str, sender: str = "Me 
         conn.commit()
         return cur.lastrowid
 
+def insert_inbox_email(sender: str, sender_email: str, recipient: str, subject: str, body: str, is_read: int = 0, is_starred: int = 0) -> int:
+    init_db()
+    now = time.time()
+    time_str = time.strftime("%I:%M %p")
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        # Avoid duplicate email entries
+        cur.execute("SELECT id FROM emails WHERE sender_email = ? AND subject = ? AND created_at > ?", (sender_email, subject, now - 86400))
+        existing = cur.fetchone()
+        if existing:
+            return existing[0]
+        cur.execute(
+            "INSERT INTO emails (sender, sender_email, recipient, subject, body, folder, is_read, is_starred, received_at, created_at) VALUES (?, ?, ?, ?, ?, 'inbox', ?, ?, ?, ?)",
+            (sender, sender_email, recipient, subject, body, is_read, is_starred, time_str, now)
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
 def mark_email_read(email_id: int, is_read: int = 1):
     init_db()
     with sqlite3.connect(DB_PATH) as conn:

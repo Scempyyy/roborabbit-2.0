@@ -305,6 +305,16 @@ function setupEventListeners() {
   const btnAddAlarm = document.getElementById("btn-add-alarm");
   if (btnAddAlarm) btnAddAlarm.addEventListener("click", handleAddCustomAlarm);
 
+  const btnToggleGmail = document.getElementById("btn-toggle-gmail-config");
+  if (btnToggleGmail) btnToggleGmail.addEventListener("click", () => {
+    document.getElementById("gmail-config-drawer").classList.toggle("hidden");
+    loadGmailStatus();
+  });
+  const btnSaveGmail = document.getElementById("btn-save-gmail-config");
+  if (btnSaveGmail) btnSaveGmail.addEventListener("click", handleSaveGmailConfig);
+  const btnSyncGmail = document.getElementById("btn-sync-gmail-now");
+  if (btnSyncGmail) btnSyncGmail.addEventListener("click", handleSyncGmailNow);
+
   const btnToggleCompose = document.getElementById("btn-toggle-compose-email");
   if (btnToggleCompose) btnToggleCompose.addEventListener("click", () => {
     document.getElementById("compose-email-drawer").classList.toggle("hidden");
@@ -1979,12 +1989,71 @@ async function handleDeleteAlarm(id) {
 }
 
 // ==========================================
-// EXECUTIVE MAILBOX HUB
+// EXECUTIVE MAILBOX HUB & GMAIL SYNC
 // ==========================================
+
+async function loadGmailStatus() {
+  const lbl = document.getElementById("gmail-status-label");
+  const emailInput = document.getElementById("input-gmail-address");
+  try {
+    const res = await fetch("/api/gmail/config");
+    const d = await res.json();
+    if (d.configured) {
+      if (lbl) lbl.innerHTML = `<span class="text-emerald-400 font-semibold">Linked: ${escapeHtml(d.gmail_user)}</span>`;
+      if (emailInput && !emailInput.value) emailInput.value = d.gmail_user;
+    } else {
+      if (lbl) lbl.innerHTML = `<span class="text-slate-400">Status: Not connected</span>`;
+    }
+  } catch (e) {}
+}
+
+async function handleSaveGmailConfig() {
+  const email = document.getElementById("input-gmail-address")?.value.trim();
+  const pass = document.getElementById("input-gmail-app-pass")?.value.trim();
+  if (!email || !pass) {
+    alert("Please enter both your Gmail address and 16-character Google App Password.");
+    return;
+  }
+  try {
+    const res = await fetch("/api/gmail/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_email: email, app_password: pass })
+    });
+    const d = await res.json();
+    if (d.success) {
+      alert("Gmail credentials saved! Click 'Sync Gmail Now' to fetch unread emails.");
+      loadGmailStatus();
+    }
+  } catch (err) {
+    alert("Save error: " + err.message);
+  }
+}
+
+async function handleSyncGmailNow() {
+  const btn = document.getElementById("btn-sync-gmail-now");
+  if (btn) btn.classList.add("animate-pulse");
+  try {
+    const res = await fetch("/api/gmail/sync", { method: "POST" });
+    const d = await res.json();
+    if (d.success) {
+      alert(d.message || "Gmail synced successfully!");
+      loadEmailsList("inbox");
+      pollManagerHubs();
+    } else {
+      alert("Gmail sync error: " + (d.error || "Check credentials"));
+    }
+  } catch (err) {
+    alert("Sync error: " + err.message);
+  } finally {
+    if (btn) btn.classList.remove("animate-pulse");
+  }
+}
 
 async function openEmailsModal() {
   if (!modalEmails) return;
   modalEmails.classList.remove("hidden");
+  loadGmailStatus();
   loadEmailsList("inbox");
 }
 

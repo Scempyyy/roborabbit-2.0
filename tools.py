@@ -575,6 +575,94 @@ async def manage_emails_tool(action: str, folder: str = "inbox", unread_only: bo
     else:
         return {"success": False, "error": f"Unknown action: {action}"}
 
+async def sync_gmail_tool(user_email: str = None, app_password: str = None, limit: int = 10) -> dict:
+    import database as db
+    import imaplib
+    import email
+    from email.header import decode_header
+    import config
+    
+    cfg = config.load_config()
+    user_email = user_email or cfg.get("gmail_user", "")
+    app_password = app_password or cfg.get("gmail_app_password", "")
+    
+    if not user_email or not app_password:
+        return {
+            "success": False,
+            "error": "Gmail credentials not configured. Please supply your Gmail address and Google App Password (from myaccount.google.com/apppasswords)."
+        }
+        
+    try:
+        mail = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=10)
+        mail.login(user_email, app_password)
+        mail.select("INBOX")
+        
+        status, response = mail.search(None, "UNSEEN")
+        if status != "OK":
+            return {"success": False, "error": "Failed to search Gmail inbox"}
+            
+        msg_ids = response[0].split()
+        fetched_count = 0
+        new_emails = []
+        
+        for msg_id in reversed(msg_ids[-limit:]):
+            res, data = mail.fetch(msg_id, "(RFC822)")
+            if res != "OK":
+                continue
+            raw_email = data[0][1]
+            msg = email.message_from_bytes(raw_email)
+            
+            subject_header = msg.get("Subject", "No Subject")
+            decoded_subj = decode_header(subject_header)[0]
+            subject = decoded_subj[0]
+            if isinstance(subject, bytes):
+                subject = subject.decode(decoded_subj[1] or "utf-8", errors="ignore")
+                
+            from_header = msg.get("From", "Unknown")
+            sender = from_header
+            sender_email = user_email
+            if "<" in from_header and ">" in from_header:
+                sender = from_header.split("<")[0].strip().strip('"')
+                sender_email = from_header.split("<")[1].split(">")[0].strip()
+                
+            body = ""
+            if msg.is_multipart():
+                for part in msg.walk():
+                    content_type = part.get_content_type()
+                    content_disposition = str(part.get("Content-Disposition"))
+                    if content_type == "text/plain" and "attachment" not in content_disposition:
+                        payload = part.get_payload(decode=True)
+                        if payload:
+                            body = payload.decode(errors="ignore")
+                            break
+            else:
+                payload = msg.get_payload(decode=True)
+                if payload:
+                    body = payload.decode(errors="ignore")
+                    
+            body_snippet = body[:300].strip() if body else "No text preview available."
+            eid = db.insert_inbox_email(
+                sender=sender or "Sender",
+                sender_email=sender_email,
+                recipient=user_email,
+                subject=subject or "(No Subject)",
+                body=body_snippet,
+                is_read=0
+            )
+            fetched_count += 1
+            new_emails.append({"id": eid, "sender": sender, "subject": subject})
+            
+        mail.logout()
+        return {
+            "success": True,
+            "fetched_count": fetched_count,
+            "new_emails": new_emails,
+            "message": f"Successfully synced {fetched_count} unread emails from Gmail."
+        }
+    except Exception as e:
+        return {"success": False, "error": f"Gmail IMAP connection error: {str(e)}"}
+
+
 # ==========================================
 # EXECUTIVE BRIEFING TOOL
 # ==========================================

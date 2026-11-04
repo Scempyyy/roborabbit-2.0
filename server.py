@@ -28,7 +28,8 @@ from tools import (
     capture_screen_vision_tool,
     emergency_stop_tool,
     developer_tools,
-    manage_application_tool
+    manage_application_tool,
+    sync_gmail_tool
 )
 from agent import chat_stream
 from tts import synthesize_speech, clean_text_for_speech, AVAILABLE_VOICES, broadcast_speaker
@@ -374,9 +375,47 @@ async def api_delete_email(email_id: int):
     db.delete_email(email_id)
     return {"success": True}
 
+class GmailConfigRequest(BaseModel):
+    user_email: str
+    app_password: str
+
+@app.post("/api/gmail/config")
+async def api_set_gmail_config(req: GmailConfigRequest):
+    cfg = load_config()
+    cfg["gmail_user"] = req.user_email
+    cfg["gmail_app_password"] = req.app_password
+    save_config(cfg)
+    return {"success": True, "gmail_user": req.user_email}
+
+@app.get("/api/gmail/config")
+async def api_get_gmail_config():
+    cfg = load_config()
+    configured = bool(cfg.get("gmail_user") and cfg.get("gmail_app_password"))
+    return {"configured": configured, "gmail_user": cfg.get("gmail_user", "")}
+
+@app.post("/api/gmail/sync")
+async def api_sync_gmail():
+    return await sync_gmail_tool()
+
 # ==========================================
 # PHONE NOTIFICATIONS ENDPOINTS
 # ==========================================
+
+class PhonePushNotification(BaseModel):
+    app_name: str
+    title: str
+    content: str
+    package_name: str = "com.android.notification"
+
+@app.post("/api/notifications/phone/push")
+async def api_push_phone_notification(req: PhonePushNotification):
+    nid = db.add_phone_notification(
+        app_name=req.app_name,
+        title=req.title,
+        content=req.content,
+        package_name=req.package_name
+    )
+    return {"success": True, "notification_id": nid}
 
 @app.get("/api/notifications/phone")
 async def api_get_phone_notifications():
