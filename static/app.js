@@ -5,7 +5,7 @@ let isStreaming = false;
 
 // Audio & Voice State
 let isAutoSpeak = localStorage.getItem("roborabbit_autospeak") !== "false";
-let selectedVoice = localStorage.getItem("roborabbit_voice") || "en-GB-RyanNeural";
+let selectedVoice = localStorage.getItem("roborabbit_voice") || "en-US-BrianNeural";
 let selectedRate = localStorage.getItem("roborabbit_rate") || "+0%";
 let currentAudio = null;
 let activeSpeakBtn = null;
@@ -598,7 +598,7 @@ async function speakMessage(rawText, buttonElement = null) {
     jarvisVisualizer.classList.add("inline-flex");
   }
 
-  const voice = selectedVoice || "en-GB-RyanNeural";
+  const voice = selectedVoice || "en-US-BrianNeural";
   const rate = selectedRate || "+0%";
   const ttsUrl = `/api/tts?text=${encodeURIComponent(clean)}&voice=${encodeURIComponent(voice)}&rate=${encodeURIComponent(rate)}`;
 
@@ -1135,18 +1135,20 @@ async function sendCallModeMessage(promptText) {
     setCallTranscript(`Roborabbit: "${assistantReply}"`);
     updateCallStatus("Speaking...", "speaking");
 
-    // Route speaker if selected
+    // Route speaker to selected destination without overlapping audio
     if (currentCallSpeaker === "server") {
-      fetch("/api/tts/broadcast", {
+      await fetch("/api/tts/broadcast", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: assistantReply, host: "laptop2" })
       }).catch(() => {});
+      onTTSSpeechFinished();
     } else if (currentCallSpeaker === "phone") {
       dispatchPhoneCommand("speak", { text: assistantReply });
+      onTTSSpeechFinished();
+    } else {
+      await speakMessage(assistantReply);
     }
-
-    await speakMessage(assistantReply);
 
   } catch (err) {
     isStreaming = false;
@@ -1920,8 +1922,8 @@ async function sendMessage() {
       }
       lucide.createIcons();
 
-      // Auto-speak if JARVIS Voice Mode or Wake Word is active
-      if (isAutoSpeak || isWakeWordEnabled) {
+      // Auto-speak if JARVIS Voice Mode or Wake Word is active (unless Call Mode is active which handles its own speech)
+      if (!isCallModeActive && (isAutoSpeak || isWakeWordEnabled)) {
         speakMessage(fullContent, speakBtn);
       }
     }

@@ -12,45 +12,45 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 AVAILABLE_VOICES = [
     {
-        "id": "en-GB-RyanNeural",
-        "name": "JARVIS (British Suave Male)",
-        "accent": "en-GB",
+        "id": "en-US-BrianNeural",
+        "name": "Brian (JARVIS - Deep & Crisp)",
+        "accent": "en-US",
         "gender": "Male",
         "recommended": True
     },
     {
-        "id": "en-GB-SoniaNeural",
-        "name": "FRIDAY (British Articulate Female)",
+        "id": "en-GB-RyanNeural",
+        "name": "Ryan (British Suave Male)",
         "accent": "en-GB",
-        "gender": "Female",
+        "gender": "Male",
         "recommended": False
     },
     {
         "id": "en-US-ChristopherNeural",
-        "name": "Christopher (US Confident Male)",
+        "name": "Christopher (Authoritative Male)",
         "accent": "en-US",
         "gender": "Male",
         "recommended": False
     },
     {
         "id": "en-US-GuyNeural",
-        "name": "Guy (US Casual Male)",
+        "name": "Guy (Casual Male)",
         "accent": "en-US",
         "gender": "Male",
         "recommended": False
     },
     {
-        "id": "en-US-JennyNeural",
-        "name": "Jenny (US Professional Female)",
-        "accent": "en-US",
+        "id": "en-GB-SoniaNeural",
+        "name": "Sonia (British Female)",
+        "accent": "en-GB",
         "gender": "Female",
         "recommended": False
     },
     {
-        "id": "en-IN-PrabhatNeural",
-        "name": "Prabhat (Indian English Male)",
-        "accent": "en-IN",
-        "gender": "Male",
+        "id": "en-US-JennyNeural",
+        "name": "Jenny (Professional Female)",
+        "accent": "en-US",
+        "gender": "Female",
         "recommended": False
     }
 ]
@@ -134,7 +134,7 @@ async def synthesize_speech(text: str, voice: Optional[str] = None, rate: Option
         clean_text = "I am listening, sir."
         
     cfg = load_config()
-    target_voice = voice or cfg.get("tts_voice", "en-GB-RyanNeural")
+    target_voice = voice or cfg.get("tts_voice", "en-US-BrianNeural")
     target_rate = rate or cfg.get("tts_rate", "+0%")
     
     # Compute cache key
@@ -162,7 +162,7 @@ async def synthesize_speech(text: str, voice: Optional[str] = None, rate: Option
 async def broadcast_speaker(text: str, host: str = "laptop2", voice: Optional[str] = None) -> dict:
     """
     Synthesizes speech and plays it out loud via physical hardware speakers
-    on Server (local mpg123/pactl), Laptop (SSH paplay/mpg123), or Mobile Phone.
+    on Server (local ffplay/mpg123), Laptop (SSH ffplay/mpg123), or Mobile Phone.
     """
     clean_text = clean_text_for_speech(text)
     if not clean_text:
@@ -177,11 +177,11 @@ async def broadcast_speaker(text: str, host: str = "laptop2", voice: Optional[st
     
     tgt = host.lower().strip()
     if tgt in ["laptop1", "main", "main-laptop", "laptop"]:
-        # Send to Laptop and play via mpg123 or paplay
+        # Send to Laptop and play via ffplay or mpg123
         cfg = load_config()
         main_host = cfg.get("laptop1_host", "main-laptop")
         scp_cmd = f"scp {temp_file} {main_host}:/tmp/roborabbit_broadcast.mp3"
-        play_cmd = f"ssh {main_host} 'pactl set-sink-mute @DEFAULT_SINK@ 0 2>/dev/null; pactl set-sink-volume @DEFAULT_SINK@ 70% 2>/dev/null; mpg123 -q /tmp/roborabbit_broadcast.mp3 2>/dev/null || paplay /tmp/roborabbit_broadcast.mp3 2>/dev/null || ffplay -nodisp -autoexit /tmp/roborabbit_broadcast.mp3 2>/dev/null'"
+        play_cmd = f"ssh {main_host} 'pactl set-sink-mute @DEFAULT_SINK@ 0 2>/dev/null; pactl set-sink-volume @DEFAULT_SINK@ 70% 2>/dev/null; ffplay -nodisp -autoexit -loglevel quiet /tmp/roborabbit_broadcast.mp3 2>/dev/null || mpg123 -o pulse -q /tmp/roborabbit_broadcast.mp3 2>/dev/null'"
         
         proc_scp = await asyncio.create_subprocess_shell(scp_cmd)
         await proc_scp.communicate()
@@ -221,7 +221,7 @@ async def broadcast_speaker(text: str, host: str = "laptop2", voice: Optional[st
         proc_unmute = await asyncio.create_subprocess_shell(unmute_cmd)
         await proc_unmute.communicate()
         
-        play_cmd = f"{pactl_env} mpg123 -q {temp_file} 2>/dev/null || {pactl_env} paplay {temp_file} 2>/dev/null || {pactl_env} pw-play {temp_file} 2>/dev/null || ffplay -nodisp -autoexit {temp_file} 2>/dev/null"
+        play_cmd = f"{pactl_env} ffplay -nodisp -autoexit -loglevel quiet {temp_file} 2>/dev/null || {pactl_env} mpg123 -o pulse -q {temp_file} 2>/dev/null || {pactl_env} pw-play {temp_file} 2>/dev/null"
         proc = await asyncio.create_subprocess_shell(play_cmd)
         await proc.communicate()
         try:
