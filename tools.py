@@ -13,6 +13,28 @@ def clean_ansi(text: str) -> str:
     ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
     return ansi_escape.sub('', text)
 
+async def get_adb_target() -> str:
+    cfg = load_config()
+    phone_ip = cfg.get("phone_ip", "192.168.1.14")
+    phone_port = cfg.get("phone_port", 5555)
+    default_target = f"{phone_ip}:{phone_port}"
+    try:
+        proc = await asyncio.create_subprocess_shell(
+            "adb devices",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=2)
+        lines = [line.strip() for line in out.decode().splitlines() if line.strip()]
+        devices = [l.split()[0] for l in lines[1:] if "\tdevice" in l]
+        if default_target in devices:
+            return default_target
+        if devices:
+            return devices[0]
+    except Exception:
+        pass
+    return default_target
+
 async def run_command(host: str, command: str, timeout: int = 60) -> dict:
     host_norm = host.lower().strip()
     is_laptop1 = host_norm in ["laptop1", "main", "main-laptop", "robo", "laptop"]
@@ -55,9 +77,10 @@ async def run_command(host: str, command: str, timeout: int = 60) -> dict:
                 stderr=asyncio.subprocess.PIPE
             )
         elif is_phone:
-            # ADB shell command
+            # ADB shell command directed to specific active device
+            target_dev = await get_adb_target()
             escaped_cmd = command.replace("'", "'\\''")
-            full_cmd = f"adb shell '{escaped_cmd}'"
+            full_cmd = f"adb -s {target_dev} shell '{escaped_cmd}'"
             proc = await asyncio.create_subprocess_shell(
                 full_cmd,
                 stdout=asyncio.subprocess.PIPE,
@@ -224,28 +247,43 @@ async def get_laptop1_metrics() -> dict:
 async def get_phone_metrics() -> dict:
     """Mobile: Android Mobile Device"""
     cfg = load_config()
-    phone_ip = cfg.get("phone_ip", "192.168.1.15")
+    phone_ip = cfg.get("phone_ip", "192.168.1.14")
     
-    # Check attached devices
+    # 1. Telemetry from companion app background service
+    try:
+        import server as srv
+        telemetry = getattr(srv, "phone_telemetry", {})
+        telem_bat = telemetry.get("battery")
+        telem_model = telemetry.get("model", "Vivo V2437")
+        last_seen = telemetry.get("last_seen", 0)
+    except Exception:
+        telem_bat = None
+        telem_model = "Vivo V2437"
+        last_seen = 0
+
+    # 2. Check attached devices on server
     adb_list = await run_command("laptop2", "adb devices", timeout=2)
     devices_output = adb_list["stdout"].strip().split("\n")
     attached = [d.split()[0] for d in devices_output[1:] if "\tdevice" in d]
             
     if not attached:
+        is_active = (time.time() - last_seen) < 120
+        bat_display = telem_bat if telem_bat else "Active"
         return {
             "online": True,
             "name": "Mobile",
             "ip": phone_ip,
+            "model": telem_model,
             "role": "Android Mobile Device",
-            "battery": "Active",
-            "status": "Connected (Web App & Wi-Fi)"
+            "battery": bat_display,
+            "status": "Connected (Wireless Companion Link)" if is_active else "Connected (Companion Standby)"
         }
         
     dev_id = attached[0]
     info_res = await run_command("laptop2", f"adb -s {dev_id} shell 'getprop ro.product.model && dumpsys battery | grep -m1 level'")
     lines = info_res["stdout"].strip().split("\n")
-    model = lines[0] if len(lines) > 0 else "Android"
-    bat = "Active"
+    model = lines[0] if len(lines) > 0 and lines[0] else telem_model
+    bat = telem_bat or "Active"
     if len(lines) > 1 and "level:" in lines[1]:
         bat = lines[1].split(":")[1].strip() + "%"
         
@@ -256,7 +294,7 @@ async def get_phone_metrics() -> dict:
         "model": model,
         "role": "Android Mobile Device",
         "battery": bat,
-        "status": "Connected (ADB & Web App)"
+        "status": "Connected (ADB & Companion Link)"
     }
 
 async def get_all_devices() -> dict:
@@ -1401,24 +1439,78 @@ async def control_device_deep_tool(target: str, action: str, parameter: str = ""
     # PHONE CONTROLS
     if tgt in ["phone", "mobile", "android"]:
         import server as srv
+        target_dev = await get_adb_target()
+        
+        # Dual-dispatch: Queue to native APK and trigger direct ADB for instant reaction
         if act in ["open_app", "launch_app"]:
             srv.phone_pending_commands.append({"action": "open_app", "app": param, "package": ""})
+            app_map = {
+                "whatsapp": "com.whatsapp",
+                "instagram": "com.instagram.android",
+                "insta": "com.instagram.android",
+                "spotify": "com.spotify.music",
+                "youtube": "com.google.android.youtube",
+                "gmail": "com.google.android.gm",
+                "mail": "com.google.android.gm",
+                "telegram": "org.telegram.messenger",
+                "chrome": "com.android.chrome",
+                "browser": "com.android.chrome",
+                "maps": "com.google.android.apps.maps",
+                "camera": "com.android.camera"
+            }
+            if "camera" in act or param.lower() == "camera":
+                await asyncio.create_subprocess_shell(f"adb -s {target_dev} shell am start -a android.media.action.STILL_IMAGE_CAMERA 2>/dev/null")
+            else:
+                pkg = app_map.get(param.lower(), "")
+                if pkg:
+                    await asyncio.create_subprocess_shell(f"adb -s {target_dev} shell monkey -p {pkg} -c android.intent.category.LAUNCHER 1 2>/dev/null")
+                elif param:
+                    await asyncio.create_subprocess_shell(f"adb -s {target_dev} shell am start -a android.intent.action.VIEW -d '{param}' 2>/dev/null")
             return {"success": True, "device": "Mobile", "action": "open_app", "app": param, "message": f"Sent launch command for {param} to phone"}
+
         elif act == "open_url":
             srv.phone_pending_commands.append({"action": "open_url", "url": param})
+            await asyncio.create_subprocess_shell(f"adb -s {target_dev} shell am start -a android.intent.action.VIEW -d '{param}' 2>/dev/null")
             return {"success": True, "device": "Mobile", "action": "open_url", "url": param}
+
         elif act in ["locate", "ring", "find_phone"]:
             srv.phone_pending_commands.append({"action": "locate"})
+            locate_cmd = (
+                f"adb -s {target_dev} shell 'input keyevent 224; "
+                f"cmd vibrator_manager synced oneshot -f 1500 2>/dev/null || cmd vibration vibrate -d 1500 2>/dev/null; "
+                f"media volume --set 15 2>/dev/null; "
+                f"am start -n com.roborabbit.assistant/.MainActivity 2>/dev/null || true'"
+            )
+            await asyncio.create_subprocess_shell(locate_cmd)
             return {"success": True, "device": "Mobile", "action": "locate", "message": "Phone tracking chime and vibration beacon triggered"}
+
         elif act in ["vibrate"]:
             srv.phone_pending_commands.append({"action": "vibrate"})
-            return {"success": True, "device": "Mobile", "action": "vibrate"}
+            await asyncio.create_subprocess_shell(f"adb -s {target_dev} shell 'cmd vibrator_manager synced oneshot -f 800 2>/dev/null || cmd vibration vibrate -d 800 2>/dev/null'")
+            return {"success": True, "device": "Mobile", "action": "vibrate", "message": "Haptic pulse sent to phone"}
+
         elif act in ["dial", "call"]:
             srv.phone_pending_commands.append({"action": "dial", "number": param})
+            await asyncio.create_subprocess_shell(f"adb -s {target_dev} shell am start -a android.intent.action.DIAL -d 'tel:{param}' 2>/dev/null")
             return {"success": True, "device": "Mobile", "action": "dial", "number": param}
+
         elif act in ["sms"]:
             srv.phone_pending_commands.append({"action": "sms", "number": param, "message": "Alert from RoboRabbit"})
+            await asyncio.create_subprocess_shell(f"adb -s {target_dev} shell am start -a android.intent.action.SENDTO -d 'smsto:{param}' 2>/dev/null")
             return {"success": True, "device": "Mobile", "action": "sms", "number": param}
+
+        elif act in ["lock", "lock_screen"]:
+            await asyncio.create_subprocess_shell(f"adb -s {target_dev} shell input keyevent 26 2>/dev/null")
+            return {"success": True, "device": "Mobile", "action": "lock", "message": "Phone screen locked"}
+
+        elif act in ["wake", "wake_screen"]:
+            await asyncio.create_subprocess_shell(f"adb -s {target_dev} shell input keyevent 224 2>/dev/null")
+            return {"success": True, "device": "Mobile", "action": "wake", "message": "Phone awakened"}
+
+        elif act in ["home"]:
+            await asyncio.create_subprocess_shell(f"adb -s {target_dev} shell input keyevent 3 2>/dev/null")
+            return {"success": True, "device": "Mobile", "action": "home"}
+
         return {"success": False, "error": f"Unknown phone action: {act}"}
 
     # LAPTOP / SERVER CONTROLS

@@ -21,7 +21,7 @@ DEFAULT_CONFIG = {
     "phone_name": "Mobile",
     "laptop2_ip": "192.168.1.23",
     "laptop1_mac": "74:d4:dd:75:45:10",
-    "phone_ip": "192.168.1.15",
+    "phone_ip": "192.168.1.14",
     "phone_port": 5555,
     "port": 7777,
     "tts_voice": "en-GB-RyanNeural",

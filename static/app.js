@@ -2719,9 +2719,10 @@ function initCyberTelemetry() {
 
 function initMobileClientBridge() {
   const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if (!isMobile) return;
 
   // 1. Report battery and device telemetry if on mobile
-  if (isMobile && navigator.getBattery) {
+  if (navigator.getBattery) {
     navigator.getBattery().then(bat => {
       function sendBat() {
         fetch("/api/phone/telemetry", {

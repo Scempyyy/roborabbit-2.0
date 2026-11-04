@@ -162,7 +162,7 @@ async def synthesize_speech(text: str, voice: Optional[str] = None, rate: Option
 async def broadcast_speaker(text: str, host: str = "laptop2", voice: Optional[str] = None) -> dict:
     """
     Synthesizes speech and plays it out loud via physical hardware speakers
-    on Server (local mpg123) or Laptop (SSH paplay/mpg123).
+    on Server (local mpg123/pactl), Laptop (SSH paplay/mpg123), or Mobile Phone.
     """
     clean_text = clean_text_for_speech(text)
     if not clean_text:
@@ -175,21 +175,53 @@ async def broadcast_speaker(text: str, host: str = "laptop2", voice: Optional[st
     temp_file = f"/tmp/roborabbit_broadcast_{os.getpid()}.mp3"
     Path(temp_file).write_bytes(audio_bytes)
     
-    if host in ["laptop1", "main", "main-laptop"]:
+    tgt = host.lower().strip()
+    if tgt in ["laptop1", "main", "main-laptop", "laptop"]:
         # Send to Laptop and play via mpg123 or paplay
         cfg = load_config()
         main_host = cfg.get("laptop1_host", "main-laptop")
         scp_cmd = f"scp {temp_file} {main_host}:/tmp/roborabbit_broadcast.mp3"
-        play_cmd = f"ssh {main_host} 'mpg123 -q /tmp/roborabbit_broadcast.mp3 2>/dev/null || paplay /tmp/roborabbit_broadcast.mp3 2>/dev/null || ffplay -nodisp -autoexit /tmp/roborabbit_broadcast.mp3 2>/dev/null'"
+        play_cmd = f"ssh {main_host} 'pactl set-sink-mute @DEFAULT_SINK@ 0 2>/dev/null; pactl set-sink-volume @DEFAULT_SINK@ 70% 2>/dev/null; mpg123 -q /tmp/roborabbit_broadcast.mp3 2>/dev/null || paplay /tmp/roborabbit_broadcast.mp3 2>/dev/null || ffplay -nodisp -autoexit /tmp/roborabbit_broadcast.mp3 2>/dev/null'"
         
         proc_scp = await asyncio.create_subprocess_shell(scp_cmd)
         await proc_scp.communicate()
         proc_play = await asyncio.create_subprocess_shell(play_cmd)
         stdout, stderr = await proc_play.communicate()
+        try:
+            os.remove(temp_file)
+        except Exception:
+            pass
         return {"success": True, "message": f"Broadcasted audio on Laptop speakers: '{clean_text}'"}
+    elif tgt in ["phone", "mobile", "android"]:
+        # Broadcast on Mobile phone companion and ADB
+        try:
+            import server as srv
+            srv.phone_pending_commands.append({"action": "speak", "text": clean_text})
+        except Exception:
+            pass
+        try:
+            cfg = load_config()
+            phone_ip = cfg.get("phone_ip", "192.168.1.14")
+            phone_port = cfg.get("phone_port", 5555)
+            dev_target = f"{phone_ip}:{phone_port}"
+            await asyncio.create_subprocess_shell(
+                f"adb -s {dev_target} push {temp_file} /sdcard/roborabbit_broadcast.mp3 2>/dev/null && adb -s {dev_target} shell am start -a android.intent.action.VIEW -d file:///sdcard/roborabbit_broadcast.mp3 -t audio/mp3 2>/dev/null"
+            )
+        except Exception:
+            pass
+        try:
+            os.remove(temp_file)
+        except Exception:
+            pass
+        return {"success": True, "message": f"Broadcasted audio on Mobile Phone: '{clean_text}'"}
     else:
-        # Play on Server hardware speakers
-        play_cmd = f"mpg123 -q {temp_file} 2>/dev/null || ffplay -nodisp -autoexit {temp_file} 2>/dev/null"
+        # Play on Server hardware speakers (unmute and set volume first)
+        pactl_env = "XDG_RUNTIME_DIR=/run/user/1000 PULSE_SERVER=unix:/run/user/1000/pulse/native"
+        unmute_cmd = f"{pactl_env} pactl set-sink-mute @DEFAULT_SINK@ 0 2>/dev/null; {pactl_env} pactl set-sink-volume @DEFAULT_SINK@ 75% 2>/dev/null"
+        proc_unmute = await asyncio.create_subprocess_shell(unmute_cmd)
+        await proc_unmute.communicate()
+        
+        play_cmd = f"{pactl_env} mpg123 -q {temp_file} 2>/dev/null || {pactl_env} paplay {temp_file} 2>/dev/null || {pactl_env} pw-play {temp_file} 2>/dev/null || ffplay -nodisp -autoexit {temp_file} 2>/dev/null"
         proc = await asyncio.create_subprocess_shell(play_cmd)
         await proc.communicate()
         try:

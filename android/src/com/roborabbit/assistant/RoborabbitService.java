@@ -125,34 +125,38 @@ public class RoborabbitService extends Service {
 
     private void pollServerCommands() {
         HttpURLConnection conn = null;
-        try {
-            URL url = new URL(SERVER_URL + "/api/phone/poll");
-            conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("GET");
-            conn.setConnectTimeout(2500);
-            conn.setReadTimeout(2500);
+        String[] bases = {SERVER_URL, FALLBACK_URL};
+        for (String base : bases) {
+            try {
+                URL url = new URL(base + "/api/phone/poll");
+                conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("GET");
+                conn.setConnectTimeout(2500);
+                conn.setReadTimeout(2500);
 
-            if (conn.getResponseCode() == 200) {
-                BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-                StringBuilder sb = new StringBuilder();
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    sb.append(line);
-                }
-                reader.close();
-
-                JSONObject res = new JSONObject(sb.toString());
-                if (res.has("commands")) {
-                    JSONArray cmds = res.getJSONArray("commands");
-                    for (int i = 0; i < cmds.length(); i++) {
-                        JSONObject c = cmds.getJSONObject(i);
-                        executeCommand(c);
+                if (conn.getResponseCode() == 200) {
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        sb.append(line);
                     }
+                    reader.close();
+
+                    JSONObject res = new JSONObject(sb.toString());
+                    if (res.has("commands")) {
+                        JSONArray cmds = res.getJSONArray("commands");
+                        for (int i = 0; i < cmds.length(); i++) {
+                            JSONObject c = cmds.getJSONObject(i);
+                            executeCommand(c);
+                        }
+                    }
+                    return;
                 }
+            } catch (Exception ignored) {
+            } finally {
+                if (conn != null) { conn.disconnect(); conn = null; }
             }
-        } catch (Exception ignored) {
-        } finally {
-            if (conn != null) conn.disconnect();
         }
     }
 
@@ -265,22 +269,30 @@ public class RoborabbitService extends Service {
 
             byte[] bytes = json.toString().getBytes("UTF-8");
 
-            URL url = new URL(SERVER_URL + "/api/phone/telemetry");
-            conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("POST");
-            conn.setRequestProperty("Content-Type", "application/json");
-            conn.setDoOutput(true);
-            conn.setConnectTimeout(2500);
-            conn.setReadTimeout(2500);
+            String[] bases = {SERVER_URL, FALLBACK_URL};
+            for (String base : bases) {
+                try {
+                    URL url = new URL(base + "/api/phone/telemetry");
+                    conn = (HttpURLConnection) url.openConnection();
+                    conn.setRequestMethod("POST");
+                    conn.setRequestProperty("Content-Type", "application/json");
+                    conn.setDoOutput(true);
+                    conn.setConnectTimeout(2500);
+                    conn.setReadTimeout(2500);
 
-            OutputStream os = conn.getOutputStream();
-            os.write(bytes);
-            os.flush();
-            os.close();
-            conn.getResponseCode();
+                    OutputStream os = conn.getOutputStream();
+                    os.write(bytes);
+                    os.flush();
+                    os.close();
+                    if (conn.getResponseCode() == 200) {
+                        return;
+                    }
+                } catch (Exception ignored) {
+                } finally {
+                    if (conn != null) { conn.disconnect(); conn = null; }
+                }
+            }
         } catch (Exception ignored) {
-        } finally {
-            if (conn != null) conn.disconnect();
         }
     }
 
