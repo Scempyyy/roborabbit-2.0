@@ -207,6 +207,31 @@ function setupEventListeners() {
   if (btnCancelPhone) btnCancelPhone.addEventListener("click", () => phoneModal && phoneModal.classList.add("hidden"));
   if (btnSubmitPhone) btnSubmitPhone.addEventListener("click", connectPhone);
 
+  // 1-on-1 Call Mode
+  const btnStartCall = document.getElementById("btn-start-call");
+  if (btnStartCall) btnStartCall.addEventListener("click", () => { playHudClickSound(); startCallMode(); });
+
+  const mobBtnCall = document.getElementById("mobile-btn-call");
+  if (mobBtnCall) mobBtnCall.addEventListener("click", () => { playHudClickSound(); startCallMode(); });
+
+  const btnCallHangup = document.getElementById("btn-call-hangup");
+  if (btnCallHangup) btnCallHangup.addEventListener("click", endCallMode);
+
+  const btnCallMinimize = document.getElementById("btn-call-minimize");
+  if (btnCallMinimize) btnCallMinimize.addEventListener("click", endCallMode);
+
+  const btnCallMute = document.getElementById("btn-call-toggle-mute");
+  if (btnCallMute) btnCallMute.addEventListener("click", toggleCallMute);
+
+  const btnCallBurst = document.getElementById("btn-call-speak-burst");
+  if (btnCallBurst) btnCallBurst.addEventListener("click", triggerCallBurst);
+
+  const btnCallSpeaker = document.getElementById("btn-call-switch-speaker");
+  if (btnCallSpeaker) btnCallSpeaker.addEventListener("click", switchCallSpeaker);
+
+  const callAvatarCore = document.getElementById("call-avatar-core");
+  if (callAvatarCore) callAvatarCore.addEventListener("click", triggerCallBurst);
+
   // Quick Action Pills
   document.querySelectorAll(".quick-pill, .welcome-chip").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -535,7 +560,10 @@ function onTTSSpeechFinished() {
   if (arcReactorCore) {
     arcReactorCore.classList.remove("speaking");
   }
-  if (isWakeWordEnabled) {
+  if (isCallModeActive) {
+    updateCallStatus("Connected • Listening for your commands...", "listening");
+    startSpeechRecognitionIfNeeded();
+  } else if (isWakeWordEnabled) {
     // Keep mic open for natural conversational follow-up ("talk like humans")
     enterConversationMode("Listening for your reply... (hands-free)");
     startSpeechRecognitionIfNeeded();
@@ -858,6 +886,246 @@ function exitConversationMode(playChime = true) {
   hideListeningPill();
 }
 
+// ==========================================
+// 1-ON-1 JARVIS CALL MODE ENGINE & STATE
+// ==========================================
+let isCallModeActive = false;
+let isCallMuted = false;
+let callDurationSeconds = 0;
+let callTimerInterval = null;
+let currentCallSpeaker = "laptop"; // "laptop", "server", "phone"
+
+async function enhanceMicrophoneInput() {
+  try {
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia && !window.__micAudioStream) {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: { ideal: true },
+          noiseSuppression: { ideal: true },
+          autoGainControl: { ideal: true }
+        }
+      });
+      window.__micAudioStream = stream;
+    }
+  } catch (e) {
+    console.warn("Enhanced microphone warning:", e);
+  }
+}
+
+async function startCallMode() {
+  isCallModeActive = true;
+  isCallMuted = false;
+  callDurationSeconds = 0;
+
+  const modal = document.getElementById("modal-call-mode");
+  if (modal) modal.classList.remove("hidden");
+
+  await enhanceMicrophoneInput();
+  getAudioContext();
+
+  const timerDisplay = document.getElementById("call-timer-display");
+  if (timerDisplay) timerDisplay.textContent = "00:00";
+  if (callTimerInterval) clearInterval(callTimerInterval);
+  callTimerInterval = setInterval(() => {
+    callDurationSeconds++;
+    const mins = String(Math.floor(callDurationSeconds / 60)).padStart(2, '0');
+    const secs = String(callDurationSeconds % 60).padStart(2, '0');
+    if (timerDisplay) timerDisplay.textContent = `${mins}:${secs}`;
+  }, 1000);
+
+  updateCallStatus("Connecting duplex link...", "thinking");
+  if (typeof playWakeChime === "function") playWakeChime();
+
+  setTimeout(() => {
+    updateCallStatus("Connected • Listening for your commands...", "listening");
+    setCallTranscript("Roborabbit: '1-on-1 call connected, sir. I am on the line, ready for your commands.'");
+    speakMessage("1-on-1 call connected, sir. I'm on the line, ready for your commands.");
+    startSpeechRecognitionIfNeeded();
+  }, 350);
+}
+
+function endCallMode() {
+  if (!isCallModeActive) return;
+  isCallModeActive = false;
+  if (callTimerInterval) {
+    clearInterval(callTimerInterval);
+    callTimerInterval = null;
+  }
+  const modal = document.getElementById("modal-call-mode");
+  if (modal) modal.classList.add("hidden");
+
+  stopSpeaking();
+  if (typeof playHudClickSound === "function") playHudClickSound();
+
+  if (isWakeWordEnabled) {
+    startSpeechRecognitionIfNeeded();
+  } else {
+    if (speechRecognizer && isRecognizing) {
+      try { speechRecognizer.stop(); } catch (e) {}
+    }
+  }
+}
+
+function updateCallStatus(text, state = "listening") {
+  const lbl = document.getElementById("call-state-status");
+  const waveDot = document.getElementById("call-mic-wave-dot");
+  const avatarCore = document.getElementById("call-avatar-core");
+  if (lbl) lbl.textContent = text;
+
+  if (state === "thinking") {
+    if (lbl) lbl.className = "text-sm font-medium text-amber-400 font-mono animate-pulse";
+    if (waveDot) waveDot.className = "w-2 h-2 rounded-full bg-amber-400 animate-ping";
+    if (avatarCore) {
+      avatarCore.style.boxShadow = "0 0 50px rgba(251, 191, 36, 0.6)";
+      avatarCore.style.borderColor = "rgba(251, 191, 36, 0.8)";
+    }
+  } else if (state === "speaking") {
+    if (lbl) lbl.className = "text-sm font-medium text-cyan-400 font-mono";
+    if (waveDot) waveDot.className = "w-2 h-2 rounded-full bg-cyan-400 animate-pulse";
+    if (avatarCore) {
+      avatarCore.style.boxShadow = "0 0 50px rgba(6, 182, 212, 0.7)";
+      avatarCore.style.borderColor = "rgba(6, 182, 212, 0.9)";
+    }
+  } else {
+    // listening
+    if (lbl) lbl.className = "text-sm font-medium text-emerald-400 font-mono animate-pulse";
+    if (waveDot) waveDot.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
+    if (avatarCore) {
+      avatarCore.style.boxShadow = "0 0 50px rgba(16, 185, 129, 0.5)";
+      avatarCore.style.borderColor = "rgba(16, 185, 129, 0.8)";
+    }
+  }
+}
+
+function setCallTranscript(text) {
+  const el = document.getElementById("call-live-transcript");
+  if (el) {
+    el.textContent = text;
+    el.scrollTop = el.scrollHeight;
+  }
+}
+
+function toggleCallMute() {
+  isCallMuted = !isCallMuted;
+  const muteLabel = document.getElementById("call-mute-label");
+  const btn = document.getElementById("btn-call-toggle-mute");
+  if (isCallMuted) {
+    if (muteLabel) muteLabel.textContent = "Unmute";
+    if (btn) btn.className = "w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-red-950/80 hover:bg-red-900 border border-red-500/80 flex flex-col items-center justify-center gap-1 text-red-300 transition shadow-lg";
+    updateCallStatus("Mic Muted", "listening");
+  } else {
+    if (muteLabel) muteLabel.textContent = "Mute";
+    if (btn) btn.className = "w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-slate-800 hover:bg-slate-750 border border-slate-700 flex flex-col items-center justify-center gap-1 text-slate-200 transition shadow-lg";
+    updateCallStatus("Connected • Listening for your commands...", "listening");
+    startSpeechRecognitionIfNeeded();
+  }
+}
+
+function switchCallSpeaker() {
+  const speakers = ["laptop", "server", "phone"];
+  const idx = speakers.indexOf(currentCallSpeaker);
+  currentCallSpeaker = speakers[(idx + 1) % speakers.length];
+  const lbl = document.getElementById("call-speaker-label");
+  if (lbl) {
+    lbl.textContent = currentCallSpeaker.toUpperCase();
+  }
+  const speakerNames = { laptop: "Laptop Audio", server: "Server Speaker", phone: "Mobile Speaker" };
+  setCallTranscript(`Audio output routed to: ${speakerNames[currentCallSpeaker]}`);
+  if (typeof playWakeChime === "function") playWakeChime();
+}
+
+function triggerCallBurst() {
+  if (isStreaming) return;
+  startSpeechRecognitionIfNeeded();
+  updateCallStatus("Listening intensely...", "listening");
+}
+
+async function sendCallModeMessage(promptText) {
+  if (!promptText || isStreaming) return;
+  isStreaming = true;
+  updateCallStatus("Roborabbit is thinking & executing...", "thinking");
+
+  appendMessage("user", promptText);
+  chatInput.value = "";
+
+  const aiMsgId = appendMessage("assistant", "...", null, null, true);
+  const msgContentEl = document.querySelector(`[data-msg-id="${aiMsgId}"] .msg-content`);
+
+  try {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: promptText,
+        device_scope: currentScope
+      })
+    });
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let assistantReply = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split("\n");
+
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          const dataStr = line.replace("data: ", "").trim();
+          if (dataStr === "[DONE]") break;
+
+          try {
+            const parsed = JSON.parse(dataStr);
+            if (parsed.type === "chunk") {
+              assistantReply += parsed.content;
+              if (msgContentEl) msgContentEl.innerHTML = renderMarkdown(assistantReply);
+            } else if (parsed.type === "tool_call") {
+              const actEl = document.getElementById("call-last-action");
+              if (actEl) actEl.textContent = `⚡ ${parsed.tool_name}`;
+            } else if (parsed.type === "tool_result") {
+              const actEl = document.getElementById("call-last-action");
+              if (actEl) actEl.textContent = `✓ ${parsed.tool_name}`;
+            }
+          } catch (e) {}
+        }
+      }
+    }
+
+    isStreaming = false;
+    if (msgContentEl) {
+      msgContentEl.innerHTML = renderMarkdown(assistantReply);
+    }
+
+    setCallTranscript(`Roborabbit: "${assistantReply}"`);
+    updateCallStatus("Speaking...", "speaking");
+
+    // Route speaker if selected
+    if (currentCallSpeaker === "server") {
+      fetch("/api/tts/broadcast", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: assistantReply, host: "laptop2" })
+      }).catch(() => {});
+    } else if (currentCallSpeaker === "phone") {
+      dispatchPhoneCommand("speak", { text: assistantReply });
+    }
+
+    await speakMessage(assistantReply);
+
+  } catch (err) {
+    isStreaming = false;
+    updateCallStatus("Connected • Listening for your commands...", "listening");
+    setCallTranscript(`Call Notice: ${err.message}`);
+    speakMessage("I encountered an issue executing your command, sir.");
+  }
+}
+
+// ==========================================
+// VOICE ASSISTANT SPEECH RECOGNITION (ENHANCED)
+// ==========================================
 function initSpeechRecognition() {
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRec) {
@@ -875,7 +1143,16 @@ function initSpeechRecognition() {
   speechRecognizer = new SpeechRec();
   speechRecognizer.continuous = true;
   speechRecognizer.interimResults = true;
-  speechRecognizer.lang = "en-US";
+
+  // Multi-accent adaptation: Auto-detect regional English (Indian, British, US)
+  const navLang = (navigator.language || "").toLowerCase();
+  if (navLang.includes("in") || navLang.includes("hi")) {
+    speechRecognizer.lang = "en-IN";
+  } else if (navLang.includes("gb")) {
+    speechRecognizer.lang = "en-GB";
+  } else {
+    speechRecognizer.lang = "en-US";
+  }
 
   speechRecognizer.onstart = () => {
     isRecognizing = true;
@@ -885,31 +1162,70 @@ function initSpeechRecognition() {
   };
 
   speechRecognizer.onresult = (event) => {
-    // Check if RoboRabbit is currently speaking aloud via TTS
+    // Barge-in / Interruption detection during TTS playback
     if (isAudioSpeaking || (currentAudio && !currentAudio.paused)) {
-      // Barge-in / Interruption detection (#2 Voice Assistant)
       let bargeTranscript = "";
-      for (let i = 0; i < event.results.length; i++) {
+      for (let i = event.resultIndex; i < event.results.length; i++) {
         bargeTranscript += event.results[i][0].transcript + " ";
       }
       if (/\b(stop|quiet|shut up|wait|pause|hold on|cancel|robo|roborabbit)\b/i.test(bargeTranscript)) {
         stopSpeaking();
         if (typeof playWakeChime === "function") playWakeChime();
-        enterConversationMode("I am listening, sir...");
+        if (isCallModeActive) {
+          updateCallStatus("Listening...", "listening");
+          setCallTranscript("Interrupted. Listening for your command, sir...");
+        } else {
+          enterConversationMode("I am listening, sir...");
+        }
         return;
       }
       return;
     }
 
-    let fullTranscript = "";
-    for (let i = 0; i < event.results.length; i++) {
-      fullTranscript += event.results[i][0].transcript + " ";
+    let finalChunk = "";
+    let interimChunk = "";
+
+    for (let i = event.resultIndex; i < event.results.length; ++i) {
+      const piece = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        finalChunk += piece + " ";
+      } else {
+        interimChunk += piece + " ";
+      }
     }
 
-    const trimmed = fullTranscript.trim();
-    if (!trimmed) return;
+    const currentSpeech = (finalChunk || interimChunk).trim();
+    if (!currentSpeech) return;
 
-    // Check for exit commands when in conversation mode
+    // ==========================================
+    // 1-ON-1 CALL MODE HANDLING (Continuous & Instant)
+    // ==========================================
+    if (isCallModeActive) {
+      if (isCallMuted) return;
+
+      setCallTranscript(`You: "${currentSpeech}"`);
+
+      // Check for call termination commands
+      if (/\b(hang up|end call|disconnect call|bye robo|bye roborabbit|goodbye robo)\b/i.test(currentSpeech)) {
+        setCallTranscript("Ending call...");
+        speakMessage("Call ended, sir. Have a good one.");
+        setTimeout(endCallMode, 1500);
+        return;
+      }
+
+      // Automatically dispatch command when speech pauses
+      if (silenceTimer) clearTimeout(silenceTimer);
+      silenceTimer = setTimeout(async () => {
+        if (!currentSpeech || isStreaming) return;
+        await sendCallModeMessage(currentSpeech);
+      }, finalChunk.length > 0 ? 750 : 1300);
+      return;
+    }
+
+    // ==========================================
+    // NORMAL DASHBOARD & WAKE WORD HANDLING
+    // ==========================================
+    const trimmed = currentSpeech;
     const EXIT_PATTERN = /\b(stop\s+listening|goodbye\s+robo|goodbye|bye\s+robo|nevermind|never\s+mind|exit\s+voice|sleep\s+robo)\b/i;
     if (isConversationMode && EXIT_PATTERN.test(trimmed)) {
       chatInput.value = "";
@@ -918,11 +1234,12 @@ function initSpeechRecognition() {
     }
 
     if (!isConversationMode) {
-      // Passive Wake Word Listening ("robo", "hey robo", "ok robo", "roborabbit")
-      const wakeMatch = trimmed.match(/\b(?:robo|roborabbit|hey\s+robo|ok\s+robo|okay\s+robo|hello\s+robo|robot)\b[,:\s-]*(.*)/i);
+      // Passive Wake Word Listening with phonetic resilience
+      const wakeMatch = trimmed.match(/\b(?:robo|roborabbit|hey\s+robo|ok\s+robo|okay\s+robo|hello\s+robo|robot|roba|rowbo|ro\s+bow|raw\s+bow|rabbit|rabbit\s+ai|scempy)\b[,:\s-]*(.*)/i);
 
       if (wakeMatch) {
         playWakeChime();
+        enhanceMicrophoneInput();
         const initialQuery = wakeMatch[1] ? wakeMatch[1].trim() : "";
         enterConversationMode("Robo is listening, sir...");
         if (initialQuery) {
@@ -936,12 +1253,12 @@ function initSpeechRecognition() {
             exitConversationMode(false);
             sendMessage();
           }
-        }, 1800);
+        }, 1200);
       }
     } else {
       // Active conversational mode ("talk like humans")
       resetConversationExpiryTimer(12000);
-      let cleaned = trimmed.replace(/^\b(?:robo|roborabbit|hey\s+robo|ok\s+robo)\b[,:\s-]*/i, "").trim();
+      let cleaned = trimmed.replace(/^\b(?:robo|roborabbit|hey\s+robo|ok\s+robo|roba|rowbo)\b[,:\s-]*/i, "").trim();
       if (!cleaned) cleaned = trimmed;
 
       chatInput.value = cleaned;
@@ -955,7 +1272,7 @@ function initSpeechRecognition() {
           exitConversationMode(false);
           sendMessage();
         }
-      }, 1800);
+      }, 1200);
     }
   };
 
@@ -965,6 +1282,12 @@ function initSpeechRecognition() {
       isWakeWordEnabled = false;
       updateWakeWordUI();
       hideListeningPill();
+      if (isCallModeActive) {
+        updateCallStatus("Microphone access denied. Please grant mic permission.", "listening");
+      }
+    } else if (isCallModeActive) {
+      clearTimeout(recognizerRestartTimeout);
+      recognizerRestartTimeout = setTimeout(startSpeechRecognitionIfNeeded, 80);
     } else if (isConversationMode) {
       clearTimeout(recognizerRestartTimeout);
       recognizerRestartTimeout = setTimeout(startSpeechRecognitionIfNeeded, 150);
@@ -977,11 +1300,11 @@ function initSpeechRecognition() {
   speechRecognizer.onend = () => {
     isRecognizing = false;
     clearTimeout(recognizerRestartTimeout);
-    if (isConversationMode) {
-      // Actively listening to user dictation: restart immediately without dropping UI
+    if (isCallModeActive) {
+      recognizerRestartTimeout = setTimeout(startSpeechRecognitionIfNeeded, 50);
+    } else if (isConversationMode) {
       recognizerRestartTimeout = setTimeout(startSpeechRecognitionIfNeeded, 80);
     } else if (isWakeWordEnabled) {
-      // Background idle wake word: restart smoothly after 800ms
       recognizerRestartTimeout = setTimeout(startSpeechRecognitionIfNeeded, 800);
     }
   };
