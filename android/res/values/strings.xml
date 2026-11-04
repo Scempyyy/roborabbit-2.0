@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Roborabbit</string>
+    <string name="service_title">Roborabbit Cyber Command</string>
+    <string name="service_desc">Persistent link active with Server (192.168.1.22:7777)</string>
+</resources>

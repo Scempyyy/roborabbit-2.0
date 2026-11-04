@@ -1,0 +1,15 @@
+[Unit]
+Description=Roborabbit 2.0 - Personal JARVIS AI Operating System Assistant
+After=network.target
+
+[Service]
+Type=simple
+User=scempyy
+WorkingDirectory=/home/scempyy/agy-assistant
+ExecStart=/home/scempyy/agy-assistant/venv/bin/uvicorn server:app --host 0.0.0.0 --port 7777
+Restart=always
+RestartSec=5
+Environment=PATH=/home/scempyy/agy-assistant/venv/bin:/usr/local/bin:/usr/bin:/home/scempyy/.local/bin
+
+[Install]
+WantedBy=multi-user.target

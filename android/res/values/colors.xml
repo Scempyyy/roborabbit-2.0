@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg_cyber">#03070B</color>
+    <color name="cyan_neon">#00F0FF</color>
+    <color name="amber_neon">#F59E0B</color>
+    <color name="green_neon">#00FF73</color>
+    <color name="text_main">#F8FAFC</color>
+    <color name="card_bg">#0A141D</color>
+</resources>
