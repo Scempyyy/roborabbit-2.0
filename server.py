@@ -57,6 +57,46 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 active_ringing_alarms = []
 
+async def autonomous_sentinel_loop():
+    """24/7 Autonomous Sentinel Worker that watches over tasks, emails, homelab health, and alerts while the user is offline"""
+    while True:
+        try:
+            # 1. Background Gmail Surveillance (if configured)
+            cfg = load_config()
+            if cfg.get("gmail_user") and cfg.get("gmail_app_password"):
+                from tools import sync_gmail_tool
+                sync_res = await sync_gmail_tool(limit=5)
+                if sync_res.get("success"):
+                    for em in sync_res.get("new_emails", []):
+                        subj = (em.get("subject") or "").lower()
+                        if any(w in subj for w in ["urgent", "security", "alert", "critical", "action required", "important"]):
+                            db.record_autonomous_task("email_alert", f"Intercepted urgent email: {em.get('subject')[:40]}", em.get("sender"))
+                            db.add_phone_notification(
+                                app_name="RoboRabbit Sentinel",
+                                title=f"🚨 Urgent: {em.get('subject')[:40]}",
+                                content=f"From: {em.get('sender')}\n{em.get('body', '')[:120]}...",
+                                package_name="com.google.android.gm"
+                            )
+
+            # 2. Homelab Docker auto-healing on Server
+            try:
+                from tools import run_command
+                d_res = await run_command("laptop2", "docker ps -a --filter status=exited --format '{{.Names}}'")
+                exited = d_res.get("stdout", "").strip()
+                if exited:
+                    for c_name in exited.split():
+                        c_name = c_name.strip()
+                        if c_name:
+                            await run_command("laptop2", f"docker start {c_name}")
+                            db.record_autonomous_task("container_healed", f"Auto-restarted container: {c_name}", "Autonomous recovery successful")
+            except Exception:
+                pass
+
+        except Exception:
+            pass
+
+        await asyncio.sleep(60)
+
 async def alarm_monitor_loop():
     while True:
         try:
@@ -74,6 +114,11 @@ async def alarm_monitor_loop():
 async def startup_event():
     db.init_db()
     asyncio.create_task(alarm_monitor_loop())
+    asyncio.create_task(autonomous_sentinel_loop())
+
+@app.get("/api/sentinel/tasks")
+async def api_get_sentinel_tasks():
+    return {"success": True, "tasks": db.get_autonomous_tasks(15)}
 
 @app.get("/", response_class=HTMLResponse)
 async def get_index():

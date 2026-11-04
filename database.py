@@ -128,6 +128,16 @@ def init_db():
                 updated_at REAL
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS autonomous_sentinel_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_type TEXT NOT NULL,
+                title TEXT NOT NULL,
+                details TEXT,
+                status TEXT DEFAULT 'completed',
+                created_at REAL
+            )
+        """)
         conn.commit()
         
         # Seed starter data if empty
@@ -669,4 +679,27 @@ def delete_integration(service: str) -> bool:
         conn.execute("DELETE FROM integrations WHERE service = ?", (service.lower().strip(),))
         conn.commit()
         return True
+
+# ==========================================
+# 24/7 AUTONOMOUS SENTINEL TASK LOGGER
+# ==========================================
+
+def record_autonomous_task(task_type: str, title: str, details: str = "", status: str = "completed") -> int:
+    init_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO autonomous_sentinel_tasks (task_type, title, details, status, created_at) VALUES (?, ?, ?, ?, ?)",
+            (task_type, title, details, status, time.time())
+        )
+        conn.commit()
+        return cur.lastrowid
+
+def get_autonomous_tasks(limit: int = 15) -> list:
+    init_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM autonomous_sentinel_tasks ORDER BY created_at DESC LIMIT ?", (limit,))
+        return [dict(r) for r in cur.fetchall()]
 
