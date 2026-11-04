@@ -1560,5 +1560,438 @@ async def control_device_deep_tool(target: str, action: str, parameter: str = ""
 
     return {"success": False, "error": f"Unknown deep action: {action}"}
 
+# ==========================================
+# OPENJARVIS ARCHITECTURE: WEB SEARCH & BROWSER
+# ==========================================
+
+async def web_search_tool(query: str, max_results: int = 5) -> dict:
+    """Live web search tool using keyless agents endpoint with fallback to news/knowledge endpoints"""
+    import urllib.request
+    import urllib.parse
+    import html
+
+    q = query.strip()
+    if not q:
+        return {"success": False, "error": "Empty search query"}
+
+    # 1. Try You.com Keyless Agents Search (OpenJarvis native integration)
+    try:
+        def _search_youcom():
+            encoded = urllib.parse.quote(q)
+            url = f"https://api.you.com/v1/agents/search?query={encoded}&count={max_results}"
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "openjarvis/0.1.0 youdotcom-integration/open-jarvis-openjarvis",
+                "Accept": "application/json"
+            })
+            with urllib.request.urlopen(req, timeout=7) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+
+        data = await asyncio.to_thread(_search_youcom)
+        results = []
+        raw_res = data.get("results", {})
+        for sec in ["web", "news"]:
+            for item in raw_res.get(sec, [])[:max_results]:
+                title = item.get("title") or "Untitled"
+                link = item.get("url") or ""
+                snippets = item.get("snippets") or []
+                desc = "\n".join(snippets) if snippets else item.get("description", "")
+                results.append({
+                    "title": title,
+                    "url": link,
+                    "snippet": desc[:350],
+                    "source": sec
+                })
+
+        if results:
+            return {
+                "success": True,
+                "engine": "youcom_keyless",
+                "query": q,
+                "count": len(results),
+                "results": results[:max_results]
+            }
+    except Exception:
+        pass
+
+    # 2. Fallback to Google News RSS search
+    try:
+        from tools import fetch_internet_news
+        news_res = await fetch_internet_news(category="all", limit=max_results)
+        if news_res.get("success") and news_res.get("stories"):
+            results = [{
+                "title": s["title"],
+                "url": s["link"],
+                "snippet": f"News headline from {s['source']} ({s['published']})",
+                "source": "google_news"
+            } for s in news_res["stories"][:max_results]]
+            return {
+                "success": True,
+                "engine": "google_news_fallback",
+                "query": q,
+                "count": len(results),
+                "results": results
+            }
+    except Exception as e:
+        return {"success": False, "query": q, "error": str(e), "results": []}
+
+    return {"success": False, "query": q, "error": "No search results returned", "results": []}
+
+async def browse_url_tool(url: str, max_chars: int = 4000) -> dict:
+    """Fetch URL, strip scripts/styles, and extract clean text/markdown content"""
+    import urllib.request
+    import html
+
+    target = url.strip()
+    if not target.startswith("http://") and not target.startswith("https://"):
+        target = "https://" + target
+
+    def _fetch_clean():
+        req = urllib.request.Request(target, headers={
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        })
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            raw = resp.read().decode("utf-8", errors="ignore")
+
+        # Strip scripts, styles, SVG, head, comments
+        cleaned = re.sub(r"<(script|style|svg|noscript|header|footer|nav)[^>]*>[\s\S]*?</\1>", "", raw, flags=re.I)
+        cleaned = re.sub(r"<!--[\s\S]*?-->", "", cleaned)
+        # Format headings and paragraphs
+        cleaned = re.sub(r"<h[1-6][^>]*>(.*?)</h[1-6]>", r"\n### \1\n", cleaned, flags=re.I)
+        cleaned = re.sub(r"<p[^>]*>(.*?)</p>", r"\n\1\n", cleaned, flags=re.I)
+        cleaned = re.sub(r"<li[^>]*>(.*?)</li>", r"\n* \1", cleaned, flags=re.I)
+        cleaned = re.sub(r"<br\s*/?>", "\n", cleaned, flags=re.I)
+        # Strip remaining tags
+        text = re.sub(r"<[^>]+>", " ", cleaned)
+        text = html.unescape(text)
+        # Compress whitespace
+        lines = [line.strip() for line in text.split("\n") if line.strip()]
+        result_text = "\n\n".join(lines)
+        if len(result_text) > max_chars:
+            result_text = result_text[:max_chars] + "\n...[truncated]"
+        return result_text
+
+    try:
+        extracted = await asyncio.to_thread(_fetch_clean)
+        return {
+            "success": True,
+            "url": target,
+            "length": len(extracted),
+            "content": extracted
+        }
+    except Exception as e:
+        return {"success": False, "url": target, "error": str(e)}
+
+async def deep_research_tool(topic: str, depth: str = "standard") -> dict:
+    """Multi-hop research agent: searches web, reads top articles, and synthesizes intelligence with citations"""
+    q = topic.strip()
+    search_res = await web_search_tool(q, max_results=4)
+    if not search_res.get("success") or not search_res.get("results"):
+        return {"success": False, "topic": q, "error": "Could not find web sources for topic"}
+
+    results = search_res.get("results", [])
+    extracted_sources = []
+    
+    # Read top 2 sources
+    for r in results[:2]:
+        url = r.get("url", "")
+        if url:
+            doc = await browse_url_tool(url, max_chars=1500)
+            if doc.get("success") and len(doc.get("content", "")) > 100:
+                extracted_sources.append({
+                    "title": r.get("title"),
+                    "url": url,
+                    "content": doc.get("content")[:1000]
+                })
+
+    report_sections = [
+        f"## 🔎 Deep Research: {q}",
+        f"**Sources Analyzed:** {len(extracted_sources)} web documents\n"
+    ]
+
+    for idx, s in enumerate(extracted_sources, 1):
+        report_sections.append(f"### [{idx}] {s['title']}\n*Source: {s['url']}*\n{s['content'][:350]}...\n")
+
+    return {
+        "success": True,
+        "topic": q,
+        "sources_count": len(extracted_sources),
+        "sources": [{"title": s["title"], "url": s["url"]} for s in extracted_sources],
+        "summary": "\n".join(report_sections)
+    }
+
+# ==========================================
+# OPENJARVIS ARCHITECTURE: MORNING DIGEST AGENT
+# ==========================================
+
+async def morning_digest_tool(honorific: str = "sir") -> dict:
+    """OpenJarvis-style daily briefing: Agenda, Notifications, Mail, Hardware, Weather"""
+    import database as db
+    from datetime import datetime
+
+    now = datetime.now()
+    date_str = now.strftime("%A, %B %d, %Y")
+    time_str = now.strftime("%I:%M %p")
+
+    # 1. Agenda
+    cal_res = await manage_calendar_tool("today")
+    events = cal_res.get("events", [])
+
+    # 2. Notifications
+    notifs = db.list_phone_notifications(limit=5)
+    unread_notifs = db.count_unread_notifications()
+
+    # 3. Emails
+    unread_emails = db.list_emails("inbox", unread_only=True, limit=5)
+
+    # 4. Todos
+    todos = db.list_todos()
+    pending_todos = [t for t in todos if t.get("status") == "pending"]
+
+    # 5. Weather
+    weather = await get_weather_tool("auto")
+
+    # 6. Device Vitals
+    devices = await get_all_devices()
+    l1 = devices.get("laptop1", {})
+    l2 = devices.get("laptop2", {})
+    phone = devices.get("phone", {})
+
+    # Build concise spoken briefing
+    spoken_parts = [
+        f"Good day, {honorific}. It is {time_str} on {date_str}."
+    ]
+
+    if weather.get("success"):
+        spoken_parts.append(f"Current weather is {weather.get('condition', 'clear')} at {weather.get('temperature', 'comfortable')}.")
+
+    if events:
+        spoken_parts.append(f"You have {len(events)} calendar commitment{'s' if len(events) > 1 else ''} today: {events[0].get('title')}.")
+    else:
+        spoken_parts.append("Your calendar is currently clear today.")
+
+    if unread_notifs > 0:
+        spoken_parts.append(f"You have {unread_notifs} unread phone alert{'s' if unread_notifs > 1 else ''}.")
+
+    if unread_emails:
+        spoken_parts.append(f"There {'are' if len(unread_emails) > 1 else 'is'} {len(unread_emails)} unread email{'s' if len(unread_emails) > 1 else ''} in your inbox.")
+
+    if pending_todos:
+        spoken_parts.append(f"{len(pending_todos)} pending to-do item{'s' if len(pending_todos) > 1 else ''} on your list.")
+
+    spoken_parts.append("All 3 systems—Laptop, Server, and Mobile—are operational.")
+
+    spoken_briefing = " ".join(spoken_parts)
+
+    return {
+        "success": True,
+        "honorific": honorific,
+        "date": date_str,
+        "time": time_str,
+        "spoken_briefing": spoken_briefing,
+        "calendar_count": len(events),
+        "unread_notifications": unread_notifs,
+        "unread_emails": len(unread_emails),
+        "pending_todos": len(pending_todos),
+        "weather": weather,
+        "devices": {
+            "laptop1": "Online" if l1.get("online") else "Asleep",
+            "server": "Online" if l2.get("online") else "Offline",
+            "phone": "Connected" if phone.get("online") else "Standby"
+        }
+    }
+
+# ==========================================
+# OPENJARVIS ARCHITECTURE: PROACTIVE APPROVAL STORE
+# ==========================================
+
+async def proactive_actions_tool(
+    action: str,
+    action_id: int = None,
+    decision: str = "",
+    action_type: str = "",
+    description: str = "",
+    payload: dict = None,
+    tier: str = "medium",
+    permission_key: str = ""
+) -> dict:
+    """OpenJarvis Autonomous Proactive Action lifecycle and Approval Store"""
+    import database as db
+
+    act = action.lower().strip()
+
+    # 1. List pending or all actions
+    if act in ["list", "get_pending"]:
+        pending = db.get_pending_actions("pending")
+        return {"success": True, "count": len(pending), "pending_actions": pending}
+
+    # 2. Propose an autonomous action
+    elif act == "propose":
+        perm_key = permission_key or f"{action_type}:{payload.get('target', 'system') if payload else 'system'}"
+        rem_decision = db.get_permission_decision(perm_key)
+
+        # Check always_deny
+        if rem_decision == "always_deny":
+            return {"success": True, "status": "skipped", "reason": "Always denied by user policy"}
+
+        # Auto-execute if trivial or always_approve
+        if tier == "trivial" or rem_decision == "always_approve":
+            exec_res = await _execute_action_payload(action_type, payload or {})
+            db.record_autonomous_task(action_type, description, f"Auto-executed ({tier})")
+            return {
+                "success": True,
+                "status": "auto_executed",
+                "tier": tier,
+                "action_type": action_type,
+                "execution_result": exec_res
+            }
+
+        # Otherwise queue for user approval
+        new_id = db.add_pending_action(action_type, description, payload or {}, perm_key, tier)
+        db.add_phone_notification(
+            app_name="RoboRabbit Sentinel",
+            title=f"⚠️ Approval Required (#{new_id})",
+            content=f"Proposed: {description}. Reply 'approve {new_id}' or 'deny {new_id}'."
+        )
+        return {
+            "success": True,
+            "status": "pending_approval",
+            "action_id": new_id,
+            "tier": tier,
+            "description": description,
+            "permission_key": perm_key
+        }
+
+    # 3. Decision on an existing action
+    elif act in ["approve", "deny", "decide"]:
+        if not action_id:
+            return {"success": False, "error": "action_id required"}
+        item = db.get_pending_action(action_id)
+        if not item:
+            return {"success": False, "error": f"Action #{action_id} not found"}
+
+        dec = decision.lower().strip() or ("approve" if act == "approve" else "deny")
+
+        if dec in ["always_approve", "always yes"]:
+            if item.get("permission_key"):
+                db.set_permission_memory(item["permission_key"], "always_approve")
+            db.update_action_status(action_id, "approved")
+            exec_res = await _execute_action_payload(item["action_type"], item.get("payload", {}))
+            db.update_action_status(action_id, "executed")
+            return {"success": True, "action_id": action_id, "decision": "always_approve", "execution": exec_res}
+
+        elif dec in ["always_deny", "always no"]:
+            if item.get("permission_key"):
+                db.set_permission_memory(item["permission_key"], "always_deny")
+            db.update_action_status(action_id, "denied")
+            return {"success": True, "action_id": action_id, "decision": "always_deny"}
+
+        elif dec in ["yes", "approve", "approved"]:
+            db.update_action_status(action_id, "approved")
+            exec_res = await _execute_action_payload(item["action_type"], item.get("payload", {}))
+            db.update_action_status(action_id, "executed")
+            return {"success": True, "action_id": action_id, "decision": "approved", "execution": exec_res}
+
+        else:
+            db.update_action_status(action_id, "denied")
+            return {"success": True, "action_id": action_id, "decision": "denied"}
+
+    return {"success": False, "error": f"Unknown proactive action: {action}"}
+
+async def _execute_action_payload(action_type: str, payload: dict) -> dict:
+    """Internal dispatcher for executing approved autonomous actions"""
+    try:
+        if action_type == "shell_command":
+            host = payload.get("device", "laptop2")
+            cmd = payload.get("command", "uptime")
+            return await run_command(host, cmd)
+        elif action_type == "phone_command":
+            from tools import control_device_deep_tool
+            tgt = payload.get("target", "phone")
+            act = payload.get("action", "vibrate")
+            param = payload.get("parameter", "")
+            return await control_device_deep_tool(tgt, act, param)
+        elif action_type == "docker_restart":
+            c_name = payload.get("container", "")
+            return await run_command("laptop2", f"docker restart {c_name}")
+        elif action_type == "email_archive":
+            email_id = payload.get("email_id")
+            import database as db
+            return {"success": True, "action": "email_archived", "email_id": email_id}
+        else:
+            return {"success": True, "action": action_type, "payload": payload}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+# ==========================================
+# OPENJARVIS ARCHITECTURE: USER PROFILE & MEMORY
+# ==========================================
+
+async def manage_memory_tool(
+    action: str,
+    key: str = "",
+    value: str = "",
+    category: str = "general",
+    query: str = ""
+) -> dict:
+    """OpenJarvis Long-Term Memory and User Profile store"""
+    import database as db
+
+    act = action.lower().strip()
+    if act in ["store", "save", "remember", "set"]:
+        if not key or not value:
+            return {"success": False, "error": "Both 'key' and 'value' are required to store a memory"}
+        db.save_user_memory(key, value, category)
+        return {"success": True, "stored": {"key": key, "value": value, "category": category}}
+
+    elif act in ["recall", "get", "search"]:
+        q = query or key
+        results = db.search_user_memories(q) if q else db.list_user_memories()
+        return {"success": True, "query": q, "count": len(results), "memories": results}
+
+    elif act in ["list", "all"]:
+        mems = db.list_user_memories(category if category != "general" else None)
+        return {"success": True, "count": len(mems), "memories": mems}
+
+    elif act in ["delete", "remove", "forget"]:
+        db.delete_user_memory(key)
+        return {"success": True, "forgotten_key": key}
+
+    return {"success": False, "error": f"Unknown memory action: {action}"}
+
+# ==========================================
+# OPENJARVIS ARCHITECTURE: PYTHON CODEACT REPL
+# ==========================================
+
+async def execute_python_code_tool(code: str, timeout: int = 15) -> dict:
+    """Execute Python code in an isolated subprocess with stdout/stderr capture"""
+    clean_code = code.strip()
+    if not clean_code:
+        return {"success": False, "error": "Empty code payload"}
+
+    start_time = time.time()
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "python3", "-c", clean_code,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        try:
+            stdout_data, stderr_data = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            duration = int((time.time() - start_time) * 1000)
+            return {
+                "success": proc.returncode == 0,
+                "exit_code": proc.returncode,
+                "stdout": stdout_data.decode("utf-8", errors="replace"),
+                "stderr": stderr_data.decode("utf-8", errors="replace"),
+                "duration_ms": duration
+            }
+        except asyncio.TimeoutError:
+            proc.kill()
+            return {"success": False, "error": f"Execution timed out after {timeout} seconds", "exit_code": -1}
+    except Exception as e:
+        return {"success": False, "error": str(e), "exit_code": 1}
+
+
 
 

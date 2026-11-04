@@ -35,7 +35,14 @@ from tools import (
     github_tool,
     media_player_tool,
     clipboard_tool,
-    control_device_deep_tool
+    control_device_deep_tool,
+    morning_digest_tool,
+    proactive_actions_tool,
+    web_search_tool,
+    browse_url_tool,
+    deep_research_tool,
+    manage_memory_tool,
+    execute_python_code_tool
 )
 from agent import chat_stream
 from tts import synthesize_speech, clean_text_for_speech, AVAILABLE_VOICES, broadcast_speaker
@@ -78,17 +85,40 @@ async def autonomous_sentinel_loop():
                                 package_name="com.google.android.gm"
                             )
 
-            # 2. Homelab Docker auto-healing on Server
+            # 2. Homelab Docker Auto-Surveillance & Proactive Actions
             try:
-                from tools import run_command
+                from tools import run_command, proactive_actions_tool
                 d_res = await run_command("laptop2", "docker ps -a --filter status=exited --format '{{.Names}}'")
                 exited = d_res.get("stdout", "").strip()
                 if exited:
                     for c_name in exited.split():
                         c_name = c_name.strip()
                         if c_name:
-                            await run_command("laptop2", f"docker start {c_name}")
-                            db.record_autonomous_task("container_healed", f"Auto-restarted container: {c_name}", "Autonomous recovery successful")
+                            await proactive_actions_tool(
+                                action="propose",
+                                action_type="docker_restart",
+                                description=f"Auto-restart exited container: {c_name}",
+                                payload={"container": c_name},
+                                tier="low",
+                                permission_key=f"docker_restart:{c_name}"
+                            )
+            except Exception:
+                pass
+
+            # 3. Mobile Battery & Telemetry Health Check
+            try:
+                from tools import proactive_actions_tool
+                p_level = phone_telemetry.get("battery", 100)
+                if isinstance(p_level, (int, float)) and p_level < 15 and not phone_telemetry.get("charging", False):
+                    # Propose low battery alert action if not already alerted
+                    await proactive_actions_tool(
+                        action="propose",
+                        action_type="phone_alert",
+                        description=f"Phone battery critical ({p_level}%). Connect charger.",
+                        payload={"battery": p_level},
+                        tier="trivial",
+                        permission_key="phone:low_battery"
+                    )
             except Exception:
                 pass
 
@@ -751,6 +781,79 @@ class DeepControlRequest(BaseModel):
 @app.post("/api/hardware/deep")
 async def api_deep_hardware_control(req: DeepControlRequest):
     return await control_device_deep_tool(target=req.target, action=req.action, parameter=req.parameter)
+
+# ==========================================
+# OPENJARVIS ARCHITECTURE: MORNING DIGEST API
+# ==========================================
+
+@app.get("/api/digest")
+async def api_get_morning_digest(honorific: str = "sir"):
+    return await morning_digest_tool(honorific=honorific)
+
+# ==========================================
+# OPENJARVIS ARCHITECTURE: PROACTIVE APPROVAL STORE API
+# ==========================================
+
+@app.get("/api/proactive/actions")
+async def api_get_proactive_actions(status: str = "all"):
+    return {"actions": db.get_pending_actions(status=status)}
+
+class ProactiveDecisionRequest(BaseModel):
+    action_id: int
+    decision: str = "approve"  # 'approve', 'deny', 'always_approve', 'always_deny'
+
+@app.post("/api/proactive/decide")
+async def api_proactive_decide(req: ProactiveDecisionRequest):
+    return await proactive_actions_tool("decide", action_id=req.action_id, decision=req.decision)
+
+# ==========================================
+# OPENJARVIS ARCHITECTURE: USER PROFILE & MEMORY API
+# ==========================================
+
+@app.get("/api/memory")
+async def api_get_user_memory(category: str = None):
+    return {"memories": db.list_user_memories(category=category)}
+
+class MemorySaveRequest(BaseModel):
+    key: str
+    value: str
+    category: str = "general"
+
+@app.post("/api/memory")
+async def api_save_user_memory(req: MemorySaveRequest):
+    return await manage_memory_tool("store", key=req.key, value=req.value, category=req.category)
+
+@app.delete("/api/memory/{key}")
+async def api_delete_user_memory(key: str):
+    return await manage_memory_tool("delete", key=key)
+
+# ==========================================
+# OPENJARVIS ARCHITECTURE: WEB SEARCH & DEEP RESEARCH API
+# ==========================================
+
+class SearchRequest(BaseModel):
+    query: str
+    max_results: int = 5
+
+@app.post("/api/search")
+async def api_web_search(req: SearchRequest):
+    return await web_search_tool(query=req.query, max_results=req.max_results)
+
+class ResearchRequest(BaseModel):
+    topic: str
+    depth: str = "standard"
+
+@app.post("/api/research")
+async def api_deep_research(req: ResearchRequest):
+    return await deep_research_tool(topic=req.topic, depth=req.depth)
+
+class CodeEvalRequest(BaseModel):
+    code: str
+
+@app.post("/api/code/eval")
+async def api_code_eval(req: CodeEvalRequest):
+    return await execute_python_code_tool(code=req.code)
+
 
 
 if __name__ == "__main__":

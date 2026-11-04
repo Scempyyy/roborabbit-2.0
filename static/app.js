@@ -3405,4 +3405,282 @@ async function syncUniversalClipboard() {
   }
 }
 
+// ==========================================
+// OPENJARVIS ARCHITECTURE: CLIENT FEATURES
+// ==========================================
+
+function initOpenJarvisFeatures() {
+  // 1. Morning Digest
+  const btnDigest = document.getElementById("btn-hud-digest");
+  if (btnDigest) {
+    btnDigest.addEventListener("click", async () => {
+      btnDigest.classList.add("opacity-50");
+      try {
+        const res = await fetch("/api/digest");
+        const d = await res.json();
+        btnDigest.classList.remove("opacity-50");
+        if (d.spoken_briefing) {
+          if (typeof speakMessage === "function") {
+            speakMessage(d.spoken_briefing);
+          }
+          alert(`🌅 RoboRabbit Morning Digest:\n\n${d.spoken_briefing}`);
+        }
+      } catch (e) {
+        btnDigest.classList.remove("opacity-50");
+        alert("Digest error: " + e.message);
+      }
+    });
+  }
+
+  // 2. Proactive Approvals Modal & Bar
+  const btnApprovals = document.getElementById("btn-hud-approvals");
+  if (btnApprovals) {
+    btnApprovals.addEventListener("click", () => {
+      openModal("modal-approvals");
+      loadPendingApprovals();
+    });
+  }
+
+  // 3. Deep Research Modal
+  const btnResearch = document.getElementById("btn-hud-research");
+  if (btnResearch) {
+    btnResearch.addEventListener("click", () => {
+      openModal("modal-research");
+    });
+  }
+
+  const btnSubmitResearch = document.getElementById("btn-submit-research");
+  const inputResearchTopic = document.getElementById("input-research-topic");
+  const researchContainer = document.getElementById("research-results-container");
+
+  if (btnSubmitResearch && inputResearchTopic) {
+    btnSubmitResearch.addEventListener("click", async () => {
+      const topic = inputResearchTopic.value.trim();
+      if (!topic) return;
+      btnSubmitResearch.disabled = true;
+      researchContainer.innerHTML = `
+        <div class="flex items-center justify-center gap-3 py-10 text-cyan-400">
+          <div class="w-5 h-5 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>
+          <span class="text-xs font-mono">Conducting multi-hop intelligence synthesis for "${topic}"...</span>
+        </div>
+      `;
+      try {
+        const res = await fetch("/api/research", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ topic, depth: "standard" })
+        });
+        const d = await res.json();
+        btnSubmitResearch.disabled = false;
+        if (d.success) {
+          let sourcesHtml = (d.sources || []).map((s, idx) => `
+            <a href="${s.url}" target="_blank" class="block p-2.5 rounded-lg bg-slate-800/80 border border-slate-700 hover:border-cyan-500 text-xs text-cyan-300 truncate">
+              [${idx + 1}] ${s.title}
+            </a>
+          `).join("");
+
+          researchContainer.innerHTML = `
+            <div class="space-y-3">
+              <div class="p-3.5 rounded-xl bg-slate-800/90 border border-slate-700/80 text-xs text-slate-200 whitespace-pre-line leading-relaxed">
+                ${d.summary}
+              </div>
+              <div class="text-[11px] font-mono text-slate-400 uppercase tracking-wider">Indexed Web Sources:</div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">${sourcesHtml}</div>
+            </div>
+          `;
+        } else {
+          researchContainer.innerHTML = `<div class="p-4 rounded-xl bg-red-950/60 border border-red-500/50 text-red-300 text-xs">${d.error || "Research failed"}</div>`;
+        }
+      } catch (e) {
+        btnSubmitResearch.disabled = false;
+        researchContainer.innerHTML = `<div class="p-4 rounded-xl bg-red-950/60 border border-red-500/50 text-red-300 text-xs">Error: ${e.message}</div>`;
+      }
+    });
+  }
+
+  // 4. Memory Vault Modal
+  const btnMemory = document.getElementById("btn-hud-memory");
+  if (btnMemory) {
+    btnMemory.addEventListener("click", () => {
+      openModal("modal-memory");
+      loadUserMemories();
+    });
+  }
+
+  const btnSaveMemory = document.getElementById("btn-save-memory");
+  if (btnSaveMemory) {
+    btnSaveMemory.addEventListener("click", async () => {
+      const k = document.getElementById("input-memory-key").value.trim();
+      const v = document.getElementById("input-memory-val").value.trim();
+      const c = document.getElementById("select-memory-cat").value;
+      if (!k || !v) return;
+      try {
+        await fetch("/api/memory", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: k, value: v, category: c })
+        });
+        document.getElementById("input-memory-key").value = "";
+        document.getElementById("input-memory-val").value = "";
+        loadUserMemories();
+      } catch (e) {
+        alert("Memory save error: " + e.message);
+      }
+    });
+  }
+
+  // Poll Proactive Approvals every 15 seconds
+  setInterval(pollProactiveApprovals, 15000);
+  pollProactiveApprovals();
+}
+
+async function pollProactiveApprovals() {
+  try {
+    const res = await fetch("/api/proactive/actions?status=pending");
+    const d = await res.json();
+    const actions = d.actions || [];
+    
+    // Update badge count
+    const badge = document.getElementById("badge-approvals-count");
+    if (badge) {
+      badge.textContent = actions.length;
+      if (actions.length > 0) {
+        badge.classList.remove("hidden");
+        badge.classList.add("animate-pulse");
+      } else {
+        badge.classList.remove("animate-pulse");
+      }
+    }
+
+    // Update Proactive Approvals Banner
+    const bar = document.getElementById("proactive-approvals-bar");
+    const barText = document.getElementById("proactive-approvals-text");
+    const barActions = document.getElementById("proactive-approvals-actions");
+
+    if (bar && barText && barActions) {
+      if (actions.length > 0) {
+        const first = actions[0];
+        barText.textContent = `[${first.tier.toUpperCase()}] Action #${first.id}: ${first.description}`;
+        barActions.innerHTML = `
+          <button onclick="decideProactiveAction(${first.id}, 'approve')" class="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-[11px] transition">Approve</button>
+          <button onclick="decideProactiveAction(${first.id}, 'deny')" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] transition">Deny</button>
+          <button onclick="openModal('modal-approvals'); loadPendingApprovals();" class="text-amber-300 hover:text-white text-[11px] underline pl-1">All (${actions.length})</button>
+        `;
+        bar.classList.remove("hidden");
+      } else {
+        bar.classList.add("hidden");
+      }
+    }
+  } catch (e) {}
+}
+
+async function loadPendingApprovals() {
+  const container = document.getElementById("approvals-modal-list");
+  if (!container) return;
+  try {
+    const res = await fetch("/api/proactive/actions?status=all");
+    const d = await res.json();
+    const actions = d.actions || [];
+    if (actions.length === 0) {
+      container.innerHTML = `<div class="text-center py-10 text-slate-400 text-xs">No autonomous actions currently in the approval store.</div>`;
+      return;
+    }
+
+    container.innerHTML = actions.map(act => {
+      const isPending = act.status === "pending";
+      const badgeColor = act.tier === "high" ? "bg-red-900/60 border-red-500 text-red-300" : (act.tier === "medium" ? "bg-amber-900/60 border-amber-500 text-amber-300" : "bg-cyan-900/60 border-cyan-500 text-cyan-300");
+      const statusColor = act.status === "executed" || act.status === "approved" ? "text-emerald-400" : (act.status === "denied" ? "text-red-400" : "text-amber-400");
+
+      return `
+        <div class="p-4 rounded-xl bg-slate-850 border border-slate-750 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div class="space-y-1 max-w-md">
+            <div class="flex items-center gap-2">
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-mono border ${badgeColor}">${act.tier.toUpperCase()}</span>
+              <span class="text-xs font-semibold text-slate-200">#${act.id}: ${act.action_type}</span>
+              <span class="text-[10px] font-mono ${statusColor}">• ${act.status.toUpperCase()}</span>
+            </div>
+            <p class="text-xs text-slate-300">${act.description}</p>
+            ${act.permission_key ? `<div class="text-[10px] text-slate-500 font-mono">Fingerprint: ${act.permission_key}</div>` : ""}
+          </div>
+          ${isPending ? `
+            <div class="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+              <button onclick="decideProactiveAction(${act.id}, 'always_approve')" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-400 text-[10px] border border-emerald-500/40" title="Approve and always allow this pattern">Always Yes</button>
+              <button onclick="decideProactiveAction(${act.id}, 'approve')" class="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs">Approve</button>
+              <button onclick="decideProactiveAction(${act.id}, 'deny')" class="px-2.5 py-1 rounded bg-red-950 hover:bg-red-900 border border-red-500 text-red-300 text-xs">Deny</button>
+            </div>
+          ` : `
+            <span class="text-xs font-mono text-slate-500">Processed</span>
+          `}
+        </div>
+      `;
+    }).join("");
+  } catch (e) {
+    container.innerHTML = `<div class="p-3 text-red-400 text-xs">Error loading actions: ${e.message}</div>`;
+  }
+}
+
+async function decideProactiveAction(actionId, decision) {
+  try {
+    const res = await fetch("/api/proactive/decide", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action_id: actionId, decision })
+    });
+    const d = await res.json();
+    if (d.success) {
+      pollProactiveApprovals();
+      loadPendingApprovals();
+    } else {
+      alert("Decision error: " + (d.error || "Action failed"));
+    }
+  } catch (e) {
+    alert("Error: " + e.message);
+  }
+}
+
+async function loadUserMemories() {
+  const container = document.getElementById("memory-modal-list");
+  if (!container) return;
+  try {
+    const res = await fetch("/api/memory");
+    const d = await res.json();
+    const mems = d.memories || [];
+    if (mems.length === 0) {
+      container.innerHTML = `<div class="text-center py-6 text-slate-400 text-xs">No memories stored yet. Add one above!</div>`;
+      return;
+    }
+    container.innerHTML = mems.map(m => `
+      <div class="px-3.5 py-2.5 rounded-xl bg-slate-800/80 border border-slate-750 flex items-center justify-between text-xs">
+        <div class="flex items-center gap-2">
+          <span class="px-1.5 py-0.5 rounded bg-emerald-950 border border-emerald-500/40 text-emerald-300 font-mono text-[10px] uppercase">${m.category}</span>
+          <span class="font-semibold text-slate-200">${m.key}:</span>
+          <span class="text-slate-300">${m.value}</span>
+        </div>
+        <button onclick="deleteUserMemory('${encodeURIComponent(m.key)}')" class="text-slate-500 hover:text-red-400 p-1">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+    `).join("");
+    if (window.lucide) window.lucide.createIcons();
+  } catch (e) {
+    container.innerHTML = `<div class="text-red-400 text-xs">Error: ${e.message}</div>`;
+  }
+}
+
+async function deleteUserMemory(encodedKey) {
+  const k = decodeURIComponent(encodedKey);
+  try {
+    await fetch(`/api/memory/${encodeURIComponent(k)}`, { method: "DELETE" });
+    loadUserMemories();
+  } catch (e) {
+    alert("Delete error: " + e.message);
+  }
+}
+
+// Hook into DOMContentLoaded
+document.addEventListener("DOMContentLoaded", () => {
+  initOpenJarvisFeatures();
+});
+
+
 

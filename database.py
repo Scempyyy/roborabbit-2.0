@@ -138,6 +138,34 @@ def init_db():
                 created_at REAL
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS pending_actions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                action_type TEXT NOT NULL,
+                description TEXT NOT NULL,
+                payload TEXT,
+                permission_key TEXT,
+                tier TEXT DEFAULT 'medium',
+                status TEXT DEFAULT 'pending',
+                created_at REAL,
+                decision_at REAL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS permission_memory (
+                permission_key TEXT PRIMARY KEY,
+                decision TEXT NOT NULL,
+                updated_at REAL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_memories (
+                key TEXT PRIMARY KEY,
+                category TEXT DEFAULT 'general',
+                value TEXT NOT NULL,
+                updated_at REAL
+            )
+        """)
         conn.commit()
         
         # Seed starter data if empty
@@ -702,4 +730,163 @@ def get_autonomous_tasks(limit: int = 15) -> list:
         cur = conn.cursor()
         cur.execute("SELECT * FROM autonomous_sentinel_tasks ORDER BY created_at DESC LIMIT ?", (limit,))
         return [dict(r) for r in cur.fetchall()]
+
+# ==========================================
+# PROACTIVE ACTION APPROVAL STORE (OpenJarvis Architecture)
+# ==========================================
+
+def add_pending_action(action_type: str, description: str, payload: dict, permission_key: str = "", tier: str = "medium") -> int:
+    init_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        payload_str = json.dumps(payload or {})
+        cur.execute(
+            """
+            INSERT INTO pending_actions (action_type, description, payload, permission_key, tier, status, created_at)
+            VALUES (?, ?, ?, ?, ?, 'pending', ?)
+            """,
+            (action_type, description, payload_str, permission_key, tier, time.time())
+        )
+        conn.commit()
+        return cur.lastrowid
+
+def get_pending_actions(status: str = "pending", limit: int = 20) -> list:
+    init_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        if status == "all":
+            cur.execute("SELECT * FROM pending_actions ORDER BY created_at DESC LIMIT ?", (limit,))
+        else:
+            cur.execute("SELECT * FROM pending_actions WHERE status = ? ORDER BY created_at DESC LIMIT ?", (status, limit))
+        rows = cur.fetchall()
+        results = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["payload"] = json.loads(d["payload"])
+            except Exception:
+                d["payload"] = {}
+            results.append(d)
+        return results
+
+def get_pending_action(action_id: int) -> dict | None:
+    init_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM pending_actions WHERE id = ?", (action_id,))
+        row = cur.fetchone()
+        if row:
+            d = dict(row)
+            try:
+                d["payload"] = json.loads(d["payload"])
+            except Exception:
+                d["payload"] = {}
+            return d
+        return None
+
+def update_action_status(action_id: int, status: str) -> bool:
+    init_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "UPDATE pending_actions SET status = ?, decision_at = ? WHERE id = ?",
+            (status, time.time(), action_id)
+        )
+        conn.commit()
+        return True
+
+def set_permission_memory(permission_key: str, decision: str) -> bool:
+    init_db()
+    if not permission_key:
+        return False
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO permission_memory (permission_key, decision, updated_at) VALUES (?, ?, ?)",
+            (permission_key.strip(), decision, time.time())
+        )
+        conn.commit()
+        return True
+
+def get_permission_decision(permission_key: str) -> str | None:
+    init_db()
+    if not permission_key:
+        return None
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT decision FROM permission_memory WHERE permission_key = ?", (permission_key.strip(),))
+        row = cur.fetchone()
+        return row[0] if row else None
+
+def list_permission_memory() -> list:
+    init_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM permission_memory ORDER BY updated_at DESC")
+        return [dict(r) for r in cur.fetchall()]
+
+# ==========================================
+# USER PROFILE & LONG-TERM MEMORY (OpenJarvis Architecture)
+# ==========================================
+
+def save_user_memory(key: str, value: str, category: str = "general") -> bool:
+    init_db()
+    k = key.strip()
+    if not k:
+        return False
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO user_memories (key, category, value, updated_at) VALUES (?, ?, ?, ?)",
+            (k, category, value.strip(), time.time())
+        )
+        conn.commit()
+        return True
+
+def get_user_memory(key: str) -> dict | None:
+    init_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM user_memories WHERE key = ?", (key.strip(),))
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+def list_user_memories(category: str = None) -> list:
+    init_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        if category and category != "all":
+            cur.execute("SELECT * FROM user_memories WHERE category = ? ORDER BY updated_at DESC", (category,))
+        else:
+            cur.execute("SELECT * FROM user_memories ORDER BY updated_at DESC")
+        return [dict(r) for r in cur.fetchall()]
+
+def search_user_memories(query: str) -> list:
+    init_db()
+    q = f"%{query.strip().lower()}%"
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM user_memories WHERE lower(key) LIKE ? OR lower(value) LIKE ? ORDER BY updated_at DESC", (q, q))
+        return [dict(r) for r in cur.fetchall()]
+
+def delete_user_memory(key: str) -> bool:
+    init_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM user_memories WHERE key = ?", (key.strip(),))
+        conn.commit()
+        return True
+
+def get_user_profile_context() -> str:
+    """Extract all remembered user facts to inject into LLM system prompt"""
+    mems = list_user_memories()
+    if not mems:
+        return ""
+    lines = ["USER MEMORY & PERSONAL PREFERENCES:"]
+    for m in mems[:20]:
+        lines.append(f"- [{m.get('category', 'general').upper()}] {m.get('key')}: {m.get('value')}")
+    return "\n".join(lines)
+
 

@@ -34,7 +34,14 @@ from tools import (
     github_tool,
     media_player_tool,
     clipboard_tool,
-    control_device_deep_tool
+    control_device_deep_tool,
+    web_search_tool,
+    browse_url_tool,
+    deep_research_tool,
+    morning_digest_tool,
+    proactive_actions_tool,
+    manage_memory_tool,
+    execute_python_code_tool
 )
 
 TOOL_DEFINITIONS_OPENAI = [
@@ -591,6 +598,117 @@ TOOL_DEFINITIONS_OPENAI = [
                 "required": ["target", "action"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Live internet search across web and news using You.com and Google intel.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query or question"},
+                    "max_results": {"type": "integer", "description": "Number of results to return (default 5)"}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browse_url",
+            "description": "Fetch a web page or documentation URL and extract clean readable text content.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "The URL to fetch and read"},
+                    "max_chars": {"type": "integer", "description": "Maximum characters to extract (default 4000)"}
+                },
+                "required": ["url"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "deep_research",
+            "description": "Autonomous multi-hop web research agent: searches web, reads top articles, and synthesizes cited findings.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "topic": {"type": "string", "description": "Topic or complex question to research"},
+                    "depth": {"type": "string", "enum": ["standard", "thorough"], "description": "Depth of analysis"}
+                },
+                "required": ["topic"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "morning_digest",
+            "description": "OpenJarvis executive spoken daily briefing: calendar agenda, unread phone alerts, urgent emails, pending todos, environmental weather, and multi-device vitals.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "honorific": {"type": "string", "description": "Preferred honorific (e.g. 'sir')"}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "proactive_actions",
+            "description": "OpenJarvis Autonomous Proactive Action Approval Store: list pending actions, propose an action, or approve/deny an action.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["list", "propose", "approve", "deny"], "description": "Action to perform"},
+                    "action_id": {"type": "integer", "description": "Action ID to approve or deny"},
+                    "decision": {"type": "string", "enum": ["yes", "no", "always_approve", "always_deny"], "description": "Decision choice"},
+                    "action_type": {"type": "string", "description": "Type of action if proposing (e.g. 'shell_command', 'phone_command', 'docker_restart')"},
+                    "description": {"type": "string", "description": "Human explanation of the action"},
+                    "payload": {"type": "object", "description": "Action data payload"},
+                    "tier": {"type": "string", "enum": ["trivial", "low", "medium", "high"], "description": "Risk tier"},
+                    "permission_key": {"type": "string", "description": "Pattern key (e.g. 'docker_restart:homelab')"}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "manage_memory",
+            "description": "OpenJarvis User Profile and Long-Term Memory: store, recall, or search remembered facts and preferences about the user.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["store", "recall", "list", "delete"], "description": "Memory action"},
+                    "key": {"type": "string", "description": "Memory key or topic (e.g. 'favorite_editor', 'working_hours')"},
+                    "value": {"type": "string", "description": "Fact or preference to remember"},
+                    "category": {"type": "string", "enum": ["general", "preference", "contact", "habit", "project"], "description": "Category"},
+                    "query": {"type": "string", "description": "Search query if recalling"}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "execute_python_code",
+            "description": "CodeAct Python REPL: execute arbitrary Python code safely to perform math, format datasets, parse content, or test algorithms.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "code": {"type": "string", "description": "Python code snippet to execute"}
+                },
+                "required": ["code"]
+            }
+        }
     }
 ]
 
@@ -1057,6 +1175,122 @@ async def execute_tool(name: str, args: dict) -> tuple[dict, dict]:
             "duration_ms": 70
         }
         return event_data, res
+    elif name == "web_search":
+        q = args.get("query", "")
+        max_r = args.get("max_results", 5)
+        res = await web_search_tool(query=q, max_results=max_r)
+        event_data = {
+            "success": res.get("success", False),
+            "host": "internet",
+            "host_display": f"🔎 Live Web Search",
+            "command": f"web_search('{q[:40]}')",
+            "stdout": json.dumps(res, indent=2),
+            "stderr": res.get("error", ""),
+            "exit_code": 0 if res.get("success") else 1,
+            "duration_ms": 200
+        }
+        return event_data, res
+    elif name == "browse_url":
+        url = args.get("url", "")
+        max_c = args.get("max_chars", 4000)
+        res = await browse_url_tool(url=url, max_chars=max_c)
+        event_data = {
+            "success": res.get("success", False),
+            "host": "internet",
+            "host_display": f"🌐 Page Content ({url[:30]}...)",
+            "command": f"browse_url('{url}')",
+            "stdout": res.get("content", "")[:500] + ("..." if len(res.get("content", "")) > 500 else ""),
+            "stderr": res.get("error", ""),
+            "exit_code": 0 if res.get("success") else 1,
+            "duration_ms": 300
+        }
+        return event_data, res
+    elif name == "deep_research":
+        topic = args.get("topic", "")
+        depth = args.get("depth", "standard")
+        res = await deep_research_tool(topic=topic, depth=depth)
+        event_data = {
+            "success": res.get("success", False),
+            "host": "internet",
+            "host_display": f"🧠 Deep Multi-Hop Research",
+            "command": f"deep_research('{topic[:35]}')",
+            "stdout": res.get("summary", ""),
+            "stderr": res.get("error", ""),
+            "exit_code": 0 if res.get("success") else 1,
+            "duration_ms": 1200
+        }
+        return event_data, res
+    elif name == "morning_digest":
+        honorific = args.get("honorific", "sir")
+        res = await morning_digest_tool(honorific=honorific)
+        event_data = {
+            "success": True,
+            "host": "all",
+            "host_display": f"🌅 Morning Executive Digest",
+            "command": f"morning_digest(honorific='{honorific}')",
+            "stdout": res.get("spoken_briefing", ""),
+            "stderr": "",
+            "exit_code": 0,
+            "duration_ms": 250
+        }
+        return event_data, res
+    elif name == "proactive_actions":
+        act = args.get("action", "list")
+        res = await proactive_actions_tool(
+            action=act,
+            action_id=args.get("action_id"),
+            decision=args.get("decision", ""),
+            action_type=args.get("action_type", ""),
+            description=args.get("description", ""),
+            payload=args.get("payload"),
+            tier=args.get("tier", "medium"),
+            permission_key=args.get("permission_key", "")
+        )
+        event_data = {
+            "success": res.get("success", False),
+            "host": "laptop2",
+            "host_display": f"🛡️ Proactive Approval Store ({act})",
+            "command": f"proactive_actions({act})",
+            "stdout": json.dumps(res, indent=2),
+            "stderr": res.get("error", ""),
+            "exit_code": 0 if res.get("success") else 1,
+            "duration_ms": 50
+        }
+        return event_data, res
+    elif name == "manage_memory":
+        act = args.get("action", "list")
+        res = await manage_memory_tool(
+            action=act,
+            key=args.get("key", ""),
+            value=args.get("value", ""),
+            category=args.get("category", "general"),
+            query=args.get("query", "")
+        )
+        event_data = {
+            "success": res.get("success", False),
+            "host": "laptop2",
+            "host_display": f"🧠 User Memory & Profile ({act})",
+            "command": f"manage_memory({act})",
+            "stdout": json.dumps(res, indent=2),
+            "stderr": res.get("error", ""),
+            "exit_code": 0 if res.get("success") else 1,
+            "duration_ms": 30
+        }
+        return event_data, res
+    elif name == "execute_python_code":
+        code_str = args.get("code", "")
+        res = await execute_python_code_tool(code=code_str)
+        event_data = {
+            "success": res.get("success", False),
+            "host": "laptop2",
+            "host_display": "🐍 CodeAct Python REPL",
+            "command": "python3 -c <code>",
+            "stdout": res.get("stdout", "") or "(No output)",
+            "stderr": res.get("stderr", "") or res.get("error", ""),
+            "exit_code": res.get("exit_code", 0),
+            "duration_ms": res.get("duration_ms", 50)
+        }
+        return event_data, res
     else:
         err = {"error": f"Unknown tool: {name}"}
         return {"success": False, "command": name, "stderr": f"Unknown tool {name}", "exit_code": 1}, err
@@ -1071,6 +1305,107 @@ async def local_fallback_agent(user_message: str) -> AsyncGenerator[dict, None]:
         "which device", "connected device", "devices connected", "devices are we connected"
     ]):
         yield {"type": "content", "delta": "We are connected to 3 devices: your phone, your main laptop, and this server."}
+        return
+
+    # 0.1 Morning / Daily Digest (OpenJarvis Architecture)
+    if any(q in msg_lower for q in ["morning digest", "daily digest", "morning briefing", "daily briefing", "executive digest", "give me my briefing"]):
+        yield {"type": "tool_call", "host": "all", "command": "morning_digest(honorific='sir')"}
+        digest_res = await morning_digest_tool(honorific="sir")
+        yield {
+            "type": "tool_result",
+            "host": "all",
+            "host_display": "🌅 Morning Executive Digest",
+            "command": "morning_digest()",
+            "stdout": digest_res.get("spoken_briefing", ""),
+            "exit_code": 0,
+            "duration_ms": 150
+        }
+        yield {"type": "content", "delta": digest_res.get("spoken_briefing", "All systems operational, sir.")}
+        return
+
+    # 0.2 Proactive Actions & Approval Decisions (OpenJarvis Architecture)
+    if any(q in msg_lower for q in ["pending action", "pending approval", "what needs approval", "approval queue", "show approvals"]):
+        yield {"type": "tool_call", "host": "laptop2", "command": "proactive_actions('list')"}
+        actions_res = await proactive_actions_tool("list")
+        yield {
+            "type": "tool_result",
+            "host": "laptop2",
+            "host_display": "🛡️ Proactive Approval Store",
+            "command": "proactive_actions(list)",
+            "stdout": json.dumps(actions_res, indent=2),
+            "exit_code": 0,
+            "duration_ms": 30
+        }
+        items = actions_res.get("pending_actions", [])
+        if not items:
+            yield {"type": "content", "delta": "No actions currently awaiting your approval, sir. All autonomous sentinel tasks are clear."}
+        else:
+            list_str = "\n".join([f"- **#{it['id']}** [{it.get('tier', 'medium').upper()}]: {it['description']}" for it in items[:4]])
+            yield {"type": "content", "delta": f"There {'are' if len(items) > 1 else 'is'} {len(items)} action{'s' if len(items) > 1 else ''} awaiting your approval, sir:\n{list_str}\n\n*Reply 'approve <id>' or 'deny <id>'.*"}
+        return
+
+    approve_match = re.search(r"\b(approve|yes|deny|no|always approve|always deny)\s+(\d+|all)\b", msg_lower)
+    if approve_match:
+        dec_word = approve_match.group(1)
+        target_id_str = approve_match.group(2)
+        if target_id_str.isdigit():
+            act_id = int(target_id_str)
+            dec_type = "always_approve" if "always" in dec_word and "approve" in dec_word else ("always_deny" if "always" in dec_word else ("approve" if dec_word in ["approve", "yes"] else "deny"))
+            yield {"type": "tool_call", "host": "laptop2", "command": f"proactive_actions({dec_type}, #{act_id})"}
+            dec_res = await proactive_actions_tool("approve" if "approve" in dec_type else "deny", action_id=act_id, decision=dec_type)
+            yield {
+                "type": "tool_result",
+                "host": "laptop2",
+                "host_display": "🛡️ Proactive Approval Store",
+                "command": f"proactive_actions(action_id={act_id}, decision='{dec_type}')",
+                "stdout": json.dumps(dec_res, indent=2),
+                "exit_code": 0,
+                "duration_ms": 40
+            }
+            if dec_res.get("success"):
+                yield {"type": "content", "delta": f"Action #{act_id} has been {dec_type.replace('_', ' ')}d, sir."}
+            else:
+                yield {"type": "content", "delta": f"Could not process action #{act_id}: {dec_res.get('error', 'action not found')}."}
+            return
+
+    # 0.3 Long-term Memory & Profile (OpenJarvis Architecture)
+    if "remember that" in msg_lower or "remember my" in msg_lower:
+        fact = re.sub(r"^(please\s+)?(can\s+you\s+)?remember\s+(that\s+|my\s+)?", "", user_message, flags=re.I).strip()
+        if fact:
+            key_part = fact.split(" is ")[0] if " is " in fact else (fact.split(" are ")[0] if " are " in fact else "user_fact")
+            val_part = fact.split(" is ", 1)[1] if " is " in fact else (fact.split(" are ", 1)[1] if " are " in fact else fact)
+            yield {"type": "tool_call", "host": "laptop2", "command": f"manage_memory(store, '{key_part[:20]}')"}
+            mem_res = await manage_memory_tool("store", key=key_part[:30], value=val_part, category="preference")
+            yield {
+                "type": "tool_result",
+                "host": "laptop2",
+                "host_display": "🧠 Memory Vault",
+                "command": f"manage_memory(store, key='{key_part}')",
+                "stdout": json.dumps(mem_res, indent=2),
+                "exit_code": 0,
+                "duration_ms": 20
+            }
+            yield {"type": "content", "delta": f"I have committed that to memory, sir: {key_part} is {val_part}."}
+            return
+
+    if any(q in msg_lower for q in ["what do you remember", "my preferences", "recall memory", "user profile"]):
+        yield {"type": "tool_call", "host": "laptop2", "command": "manage_memory(list)"}
+        mem_res = await manage_memory_tool("list")
+        yield {
+            "type": "tool_result",
+            "host": "laptop2",
+            "host_display": "🧠 Memory Vault",
+            "command": "manage_memory(list)",
+            "stdout": json.dumps(mem_res, indent=2),
+            "exit_code": 0,
+            "duration_ms": 20
+        }
+        mems = mem_res.get("memories", [])
+        if not mems:
+            yield {"type": "content", "delta": "Your long-term memory vault is currently empty, sir."}
+        else:
+            facts_str = "\n".join([f"- **{m['key']}**: {m['value']}" for m in mems[:5]])
+            yield {"type": "content", "delta": f"Here is what I have stored in your profile, sir:\n{facts_str}"}
         return
 
     # 1. System Health / Status across all 3 devices
@@ -1776,7 +2111,12 @@ async def run_freellmapi_bridge_agent(user_message: str, history: list, cfg: dic
         "   - Calendar: Use 'manage_calendar' to see today's agenda, check schedule, or add events.\n"
         "   - Alarms & Timers: Use 'manage_alarms' to set alarms, countdown timers, or list active alerts.\n"
         "   - Phone Notifications: Use 'get_phone_notifications' to check incoming phone messages and alerts.\n"
-        "   - Live Internet Intel: When asked 'what\\'s going on internet' or 'what is the news', call 'get_internet_news' and summarize in 1-2 sentences.\n"
+        "   - Live Web Search & Page Reader: Use 'web_search' to search the live web and 'browse_url' to read any article or page.\n"
+        "   - Deep Web Research: Use 'deep_research' to autonomously research multi-hop queries with citations.\n"
+        "   - Morning Spoken Digest: Use 'morning_digest' for scheduled or on-demand daily spoken briefings.\n"
+        "   - Proactive Approval Store: Use 'proactive_actions' to list pending actions or approve/deny autonomous tasks.\n"
+        "   - Long-Term User Memory: Use 'manage_memory' to store or recall facts about the user's habits, working hours, and preferences.\n"
+        "   - CodeAct Python REPL: Use 'execute_python_code' to run Python snippets, calculations, data parsing, or logic.\n"
         "   - Executive Briefing: Use 'get_executive_briefing' for morning or day status reports.\n"
         "4. DECIDING WHEN TO USE ANTIGRAVITY:\n"
         "   - For shell commands, hardware checks, or manager tasks, call the appropriate tool.\n"
@@ -1784,6 +2124,14 @@ async def run_freellmapi_bridge_agent(user_message: str, history: list, cfg: dic
         "   - For normal dialogue or conversational questions, answer directly in 1-2 sentences."
     )
     
+    try:
+        import database as db
+        u_ctx = db.get_user_profile_context()
+        if u_ctx:
+            system_prompt += f"\n\n{u_ctx}"
+    except Exception:
+        pass
+        
     messages = [{"role": "system", "content": system_prompt}]
     for h in history[-6:]:
         messages.append({"role": h.get("role", "user"), "content": h.get("content", "")})
