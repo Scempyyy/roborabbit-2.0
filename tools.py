@@ -1993,5 +1993,41 @@ async def execute_python_code_tool(code: str, timeout: int = 15) -> dict:
         return {"success": False, "error": str(e), "exit_code": 1}
 
 
+async def phalanx_status_tool() -> dict:
+    """Invokes the Phalanx master CLI to query system thermals, power profile, and suite status."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "phalanx", "status",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        out, err = await proc.communicate()
+        return {
+            "success": proc.returncode == 0,
+            "stdout": out.decode("utf-8", errors="replace"),
+            "stderr": err.decode("utf-8", errors="replace")
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+async def phalanx_scan_tool(target: str = ".") -> dict:
+    """Scans target repository or directory for exposed API keys and secrets."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "phalanx", "scan", target,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        out, err = await proc.communicate()
+        return {
+            "success": proc.returncode == 0,
+            "stdout": out.decode("utf-8", errors="replace"),
+            "stderr": err.decode("utf-8", errors="replace")
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 
 

@@ -41,7 +41,9 @@ from tools import (
     morning_digest_tool,
     proactive_actions_tool,
     manage_memory_tool,
-    execute_python_code_tool
+    execute_python_code_tool,
+    phalanx_status_tool,
+    phalanx_scan_tool
 )
 
 TOOL_DEFINITIONS_OPENAI = [
@@ -709,6 +711,30 @@ TOOL_DEFINITIONS_OPENAI = [
                 "required": ["code"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "phalanx_status",
+            "description": "Check the health, CPU thermals, ACPI profile, and status of the Phalanx 30 zero-dependency micro-system engineering suite.",
+            "parameters": {
+                "type": "object",
+                "properties": {}
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "phalanx_scan",
+            "description": "Run a zero-dependency secret leak audit on a repository or directory path to check for exposed API tokens or private keys.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target": {"type": "string", "description": "Target folder or repository path to scan (defaults to '.')", "default": "."}
+                }
+            }
+        }
     }
 ]
 
@@ -1289,6 +1315,33 @@ async def execute_tool(name: str, args: dict) -> tuple[dict, dict]:
             "stderr": res.get("stderr", "") or res.get("error", ""),
             "exit_code": res.get("exit_code", 0),
             "duration_ms": res.get("duration_ms", 50)
+        }
+        return event_data, res
+    elif name == "phalanx_status":
+        res = await phalanx_status_tool()
+        event_data = {
+            "success": res.get("success", False),
+            "host": "local",
+            "host_display": "🛡️ Phalanx Suite Health",
+            "command": "phalanx status",
+            "stdout": res.get("stdout", ""),
+            "stderr": res.get("stderr", "") or res.get("error", ""),
+            "exit_code": 0 if res.get("success") else 1,
+            "duration_ms": 40
+        }
+        return event_data, res
+    elif name == "phalanx_scan":
+        tgt = args.get("target", ".")
+        res = await phalanx_scan_tool(tgt)
+        event_data = {
+            "success": res.get("success", False),
+            "host": "local",
+            "host_display": f"🛡️ Phalanx Secret Audit ({tgt})",
+            "command": f"phalanx scan {tgt}",
+            "stdout": res.get("stdout", ""),
+            "stderr": res.get("stderr", "") or res.get("error", ""),
+            "exit_code": 0 if res.get("success") else 1,
+            "duration_ms": 120
         }
         return event_data, res
     else:
